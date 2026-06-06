@@ -1,0 +1,164 @@
+name: Daily Car News Videos
+
+on:
+  schedule:
+    - cron: "30 1 * * *"   # 7:00 AM IST
+    - cron: "30 13 * * *"  # 7:00 PM IST
+  workflow_dispatch:
+    inputs:
+      topic:
+        description: "Custom topic (optional — leave blank for auto)"
+        required: false
+      format:
+        description: "Format: news/launch/comparison/explainer/ev/suv"
+        required: false
+        default: ""
+      slot:
+        description: "Slot: morning/evening"
+        required: false
+        default: "morning"
+      upload:
+        description: "Upload to YouTube? yes/no"
+        required: false
+        default: "yes"
+
+permissions:
+  contents: write
+
+env:
+  GEMINI_KEY:             ${{ secrets.GEMINI_KEY }}
+  GROQ_API_KEY:           ${{ secrets.GROQ_API_KEY }}
+  PEXELS_API_KEY:         ${{ secrets.PEXELS_API_KEY }}
+  YOUTUBE_TOKEN_BASE64:   ${{ secrets.YOUTUBE_TOKEN_BASE64 }}
+  CLIENT_SECRETS_BASE64:  ${{ secrets.CLIENT_SECRETS_BASE64 }}
+
+jobs:
+  generate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install system deps
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq ffmpeg fonts-noto fonts-dejavu-core
+          pip install --quiet google-genai groq edge-tts \
+            google-api-python-client google-auth-oauthlib \
+            requests beautifulsoup4 Pillow schedule
+          echo "$HOME/.local/bin" >> $GITHUB_PATH
+          echo "/usr/local/bin"   >> $GITHUB_PATH
+
+      - name: Verify tools
+        run: |
+          which ffmpeg && ffmpeg -version | head -1
+          which edge-tts || echo "WARNING: edge-tts not in PATH"
+          python3 -c "import google.genai; print('google-genai OK')"
+
+      - name: Check secrets
+        run: |
+          echo "GEMINI_KEY set:           ${{ secrets.GEMINI_KEY != '' }}"
+          echo "GROQ_API_KEY set:         ${{ secrets.GROQ_API_KEY != '' }}"
+          echo "PEXELS_API_KEY set:       ${{ secrets.PEXELS_API_KEY != '' }}"
+          echo "YOUTUBE_TOKEN_BASE64 set: ${{ secrets.YOUTUBE_TOKEN_BASE64 != '' }}"
+          if [ -z "$GEMINI_KEY" ] && [ -z "$GROQ_API_KEY" ]; then
+            echo "ERROR: No LLM key set"
+            exit 1
+          fi
+
+      - name: Detect slot
+        id: slot
+        run: |
+          HOUR=$(date -u +%H)
+          INPUT_SLOT="${{ github.event.inputs.slot }}"
+          if [ -n "$INPUT_SLOT" ]; then
+            SLOT="$INPUT_SLOT"
+          elif [ "$HOUR" -ge 1 ] && [ "$HOUR" -le 6 ]; then
+            SLOT="morning"
+          else
+            SLOT="evening"
+          fi
+          echo "slot=$SLOT" >> $GITHUB_OUTPUT
+          echo "▶ Slot: $SLOT (UTC hour: $HOUR)"
+          if [ "$SLOT" = "morning" ]; then
+            echo "preferred_formats=news,launch" >> $GITHUB_OUTPUT
+          else
+            echo "preferred_formats=comparison,explainer,suv" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Setup fallback image
+        run: |
+          python3 -c "
+          from PIL import Image, ImageDraw
+          img = Image.new('RGB', (1920,1080), (10,30,60))
+          d = ImageDraw.Draw(img)
+          d.rectangle([80,400,600,680], fill=(20,50,100))
+          d.rectangle([640,200,1840,880], fill=(15,40,80))
+          img.save('image.png')
+          print('image.png created')
+          " || true
+
+      - name: Restore YouTube token
+        run: |
+          if [ -n "$YOUTUBE_TOKEN_BASE64" ]; then
+            echo "$YOUTUBE_TOKEN_BASE64" | base64 -d > youtube_token.pickle
+            echo "youtube_token.pickle restored"
+          fi
+          if [ -n "$CLIENT_SECRETS_BASE64" ]; then
+            echo "$CLIENT_SECRETS_BASE64" | base64 -d > client_secrets.json
+            echo "client_secrets.json restored"
+          fi
+
+      - name: Generate and upload
+        run: |
+          TOPIC="${{ github.event.inputs.topic }}"
+          FORMAT="${{ github.event.inputs.format }}"
+          UPLOAD="${{ github.event.inputs.upload }}"
+          SLOT="${{ steps.slot.outputs.slot }}"
+          PREFERRED="${{ steps.slot.outputs.preferred_formats }}"
+
+          export SLOT_HINT="$SLOT"
+          export PREFERRED_FORMATS="$PREFERRED"
+
+          CMD="python3 car_bot.py --day today"
+
+          if [ -n "$TOPIC" ]; then
+            CMD="python3 car_bot.py --topic \"$TOPIC\""
+          fi
+          if [ -n "$FORMAT" ]; then
+            CMD="$CMD --format $FORMAT"
+          fi
+          if [ -f youtube_token.pickle ] && [ "${UPLOAD}" != "no" ]; then
+            CMD="$CMD --upload"
+          fi
+
+          echo "▶ Running: $CMD (slot=$SLOT)"
+          eval $CMD
+
+      - name: Show results
+        if: always()
+        run: |
+          SLOT="${{ steps.slot.outputs.slot }}"
+          echo "=== Slot: $SLOT ==="
+          echo "=== Videos ===" && ls -lh videos/    2>/dev/null || echo "none"
+          echo "=== Shorts ===" && ls -lh shorts/    2>/dev/null || echo "none"
+          echo "=== Subtitles ===" && ls -lh subtitles/ 2>/dev/null || echo "none"
+          echo "=== Thumbnails ===" && ls -lh thumbnails/ 2>/dev/null || echo "none"
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: tech-meets-travel-${{ steps.slot.outputs.slot }}-${{ github.run_number }}
+          path: |
+            videos/
+            shorts/
+            subtitles/
+            metadata/
+            scripts/
+            thumbnails/
+          retention-days: 14
