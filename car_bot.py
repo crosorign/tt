@@ -956,7 +956,7 @@ def create_video(script_text, english_subtitles, images_input, output_name,
         bfo = max(0, dur - 3)
         fc = (
             "[0:a]volume=1.0,afade=t=in:st=0:d=1,afade=t=out:st={fo}:d=2[v];"
-            "[1:a]volume=0.10,afade=t=in:st=0:d=3,afade=t=out:st={bfo}:d=3[b];"
+            "[1:a]volume=0.07,afade=t=in:st=0:d=3,afade=t=out:st={bfo}:d=3[b];"
             "[v][b]amix=inputs=2:duration=first:dropout_transition=2[out]"
         ).format(fo=fo, bfo=bfo)
         run(["ffmpeg", "-y", "-i", human_file, "-i", bgm_path,
@@ -1648,6 +1648,131 @@ def upload_short_to_youtube(short_path, main_title, main_description, tags_str, 
     except Exception as e:
         log(f"  ⚠️ Short upload failed: {e}")
         return None
+
+
+
+# ═══════════════════════════════════════════════════════════════════
+# RESILIENT LLM ROUTER — 5-provider waterfall
+# Priority: Groq (fast) → Gemini (reliable) → GitHub Models (free)
+#           → Cerebras (fast free) → Groq fallback models
+#
+# All providers use OpenAI-compatible SDK for consistency.
+# GitHub Models: uses GITHUB_TOKEN (auto-set in Actions — zero config)
+# Cerebras: uses CEREBRAS_API_KEY secret (optional, add if available)
+# ═══════════════════════════════════════════════════════════════════
+
+GITHUB_TOKEN    = os.environ.get("GITHUB_TOKEN", "")
+CEREBRAS_KEY    = os.environ.get("CEREBRAS_API_KEY", "")
+
+# ── Provider configs ────────────────────────────────────────────────
+PROVIDERS = [
+    # name, base_url, api_key, model, use_for
+    ("groq",     "https://api.groq.com/openai/v1",         GROQ_API_KEY,  "llama-3.3-70b-versatile",        "script"),
+    ("gemini",   None,                                       GEMINI_KEY,    "gemini-2.5-flash",               "all"),
+    ("github",   "https://models.inference.ai.azure.com",  GITHUB_TOKEN,  "gpt-4o-mini",                    "all"),
+    ("cerebras", "https://api.cerebras.ai/v1",              CEREBRAS_KEY,  "llama-3.3-70b",                  "all"),
+    ("groq_fb",  "https://api.groq.com/openai/v1",         GROQ_API_KEY,  "llama3-8b-8192",                 "fallback"),
+]
+
+def _call_provider(name, base_url, api_key, model, prompt, max_tokens=4000):
+    """Call a single provider. Returns text or raises."""
+    if not api_key:
+        raise Exception(f"{name}: no API key")
+
+    if name == "gemini":
+        # Gemini uses its own SDK
+        client = genai.Client(api_key=api_key)
+        resp = client.models.generate_content(
+            model=model, contents=prompt)
+        return resp.text
+    else:
+        # All others: OpenAI-compatible
+        from openai import OpenAI
+        client = OpenAI(base_url=base_url, api_key=api_key)
+        resp = client.chat.completions.create(
+            model=model,
+            messages=[{"role": "user", "content": prompt}],
+            max_tokens=max_tokens,
+            temperature=0.85,
+        )
+        return resp.choices[0].message.content
+
+
+def _is_retryable(err_str):
+    """True if the error is transient (rate limit / server overload)."""
+    return any(c in err_str for c in [
+        "429", "503", "502", "RESOURCE_EXHAUSTED", "UNAVAILABLE",
+        "high demand", "overloaded", "ServiceUnavailable",
+        "rate_limit", "tokens per day", "TPD", "Internal",
+        "timeout", "timed out",
+    ])
+
+
+def call_llm(prompt, max_retries=3, prefer="gemini", max_tokens=4000):
+    """
+    Resilient multi-provider router.
+    Tries each provider in priority order.
+    On transient errors → retry with backoff.
+    On permanent errors → skip to next provider immediately.
+    """
+    # Build provider order based on preference
+    if prefer == "groq":
+        order = ["groq", "gemini", "github", "cerebras", "groq_fb"]
+    else:
+        order = ["gemini", "groq", "github", "cerebras", "groq_fb"]
+
+    provider_map = {p[0]: p for p in PROVIDERS}
+    last_error = ""
+
+    for provider_name in order:
+        if provider_name not in provider_map:
+            continue
+        name, base_url, api_key, model, _ = provider_map[provider_name]
+        if not api_key:
+            continue   # skip providers with no key configured
+
+        for attempt in range(max_retries):
+            try:
+                result = _call_provider(name, base_url, api_key, model, prompt, max_tokens)
+                if result and result.strip():
+                    if attempt > 0 or provider_name != order[0]:
+                        log(f"  ✅ LLM: {name}/{model.split('-')[0]}")
+                    return result.strip()
+            except Exception as e:
+                err = str(e)
+                last_error = err
+                if _is_retryable(err):
+                    # Daily limit hit — skip provider entirely
+                    if "tokens per day" in err or "TPD" in err or "daily" in err.lower():
+                        log(f"  ⚠️ {name}: daily limit — trying next provider")
+                        break
+                    wait = min(10 * (2 ** attempt), 60)
+                    log(f"  ⏳ {name} retry {attempt+1}/{max_retries} in {wait}s ({err[:60]})")
+                    time.sleep(wait)
+                else:
+                    # Non-retryable (auth, invalid model etc) — skip provider
+                    log(f"  ⚠️ {name}: {err[:80]} — skipping")
+                    break
+
+    raise Exception(f"All LLM providers failed. Last: {last_error[:150]}")
+
+
+def call_llm_groq(prompt, max_retries=3):
+    """Script generation — prefers Groq for quality, all providers as fallback."""
+    return call_llm(prompt, max_retries=max_retries, prefer="groq", max_tokens=4000)
+
+
+def call_llm_gemini(prompt, max_retries=3):
+    """Explicit Gemini — but falls back gracefully to other providers."""
+    return call_llm(prompt, max_retries=max_retries, prefer="gemini", max_tokens=2000)
+
+
+# Keep _call_gemini and _call_groq for backward compatibility
+def _call_gemini(prompt, max_retries=5):
+    return call_llm(prompt, max_retries=max_retries, prefer="gemini")
+
+def _call_groq(prompt, max_retries=3):
+    return call_llm(prompt, max_retries=max_retries, prefer="groq")
 
 
 def upload_to_youtube(video_path, metadata, privacy="public"):

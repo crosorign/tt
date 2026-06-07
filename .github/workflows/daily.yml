@@ -27,7 +27,9 @@ permissions:
 
 env:
   GEMINI_KEY:             ${{ secrets.GEMINI_KEY }}
+  GITHUB_TOKEN:           ${{ secrets.GITHUB_TOKEN }}
   GROQ_API_KEY:           ${{ secrets.GROQ_API_KEY }}
+  CEREBRAS_API_KEY:       ${{ secrets.CEREBRAS_API_KEY }}
   PEXELS_API_KEY:         ${{ secrets.PEXELS_API_KEY }}
   YOUTUBE_TOKEN_BASE64:   ${{ secrets.YOUTUBE_TOKEN_BASE64 }}
   CLIENT_SECRETS_BASE64:  ${{ secrets.CLIENT_SECRETS_BASE64 }}
@@ -48,7 +50,7 @@ jobs:
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y -qq ffmpeg fonts-noto fonts-dejavu-core
-          pip install --quiet google-genai groq edge-tts \
+          pip install --quiet google-genai groq edge-tts openai \
             google-api-python-client google-auth-oauthlib \
             requests beautifulsoup4 Pillow schedule
           echo "$HOME/.local/bin" >> $GITHUB_PATH
