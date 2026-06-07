@@ -1220,6 +1220,9 @@ def generate_script(topic, format_type, hook_angle, voice_gender):
         words = text.split()
         text = " ".join(words[:TARGET_MAX_WORDS])
 
+    if not text.strip():
+        log("  ❌ Script generation failed — all attempts returned empty")
+        return ""
     log(f"  ✅ Script: {len(text.split())} words in {time.time()-t0:.0f}s")
     return text
 
@@ -1745,6 +1748,9 @@ def safe_process_video(topic=None, format_type=None, upload=False, privacy="publ
 
     log("🤖 Step 1: Generating script...")
     script = generate_script(topic_val, fmt, hook_angle, gender)
+    if not script or not script.strip():
+        log("  ❌ Script empty — aborting pipeline")
+        return None
 
     log("🤖 Step 2: Generating subtitles + metadata (parallel)...")
     with concurrent.futures.ThreadPoolExecutor(max_workers=2) as pool:
