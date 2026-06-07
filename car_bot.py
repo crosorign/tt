@@ -443,14 +443,15 @@ def _call_gemini(prompt_text, model_name=GEMINI_MODEL_ECONOMY):
     if not GEMINI_KEY:
         raise Exception("GEMINI_KEY not set")
     client = genai.Client(api_key=GEMINI_KEY)
-    max_attempts = 5
+    max_attempts = 2
     for attempt in range(max_attempts):
         try:
             resp = client.models.generate_content(
                 model=model_name, contents=prompt_text)
             return resp.text
         except Exception as e:
-            if "429" in str(e) or "quota" in str(e).lower() or "RESOURCE_EXHAUSTED" in str(e):
+            err_str = str(e)
+            if "429" in err_str or "quota" in err_str.lower() or "RESOURCE_EXHAUSTED" in err_str:
                 global _QUOTA_EXHAUSTED
                 _QUOTA_EXHAUSTED = True
                 log(f"Quota exhausted on {model_name}. Attempt {attempt+1}/{max_attempts}")
@@ -459,6 +460,9 @@ def _call_gemini(prompt_text, model_name=GEMINI_MODEL_ECONOMY):
                     log(f"Backing off {sleep_time:.0f}s before retry...")
                     time.sleep(sleep_time)
                     continue
+            elif "404" in err_str or "NOT_FOUND" in err_str:
+                log(f"Model {model_name} not found, skipping")
+                return ""
             else:
                 log(f"Gemini call failed: {e}")
                 if attempt < max_attempts - 1:
@@ -502,7 +506,7 @@ def call_llm(prompt_text, task="economy"):
         log(f"call_llm task={task}: trying Groq (LLaMA) first")
         try:
             result = _call_groq(prompt_text)
-            if result.strip():
+            if result and result.strip():
                 return result
         except Exception as e:
             log(f"Groq failed for {task}: {e}")
@@ -516,7 +520,7 @@ def call_llm(prompt_text, task="economy"):
     for model_name in models:
         log(f"call_llm task={task} model={model_name}")
         result = _call_gemini(prompt_text, model_name=model_name)
-        if result.strip():
+        if result and result.strip():
             return result
     return ""
 
