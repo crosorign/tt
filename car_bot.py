@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Tech Meets Travel — CAR NEWS AUTOMATION BOT v1.1
+Tech Meets Travel — CAR NEWS AUTOMATION BOT v1.2
 Fully automated YouTube channel for Indian car news.
 Daily 2-min videos · English · Auto upload · GitHub Actions
 
@@ -242,6 +242,22 @@ CRITICAL RULES:
 4. No markdown, no headers, no bullets — pure flowing speech
 5. Every sentence must earn its place — no filler
 6. Information must be complete — viewer shouldn't need to search elsewhere
+
+YOUTUBE RETENTION RULES:
+1. HOOK (0-10s): Lead with the most exciting spec or controversy.
+   Bad: "Today we're talking about the new Tata car..."
+   Good: "Tata just confirmed the price — and it's ₹3 lakhs cheaper than expected."
+
+2. PATTERN INTERRUPT every 25s: "But here's what nobody is telling you..."
+
+3. COMPARISON ANCHOR: Always compare to what viewers know.
+   "That's the same price as a fully loaded Swift" — makes numbers real.
+
+4. BUILD SUSPENSE: Don't give the conclusion in Beat 1.
+   "I'll tell you the exact launch date at the end — but first..."
+
+5. CALL TO ACTION: "Drop a comment — Tata or Mahindra?" 
+   Forces 2-option comment = massive engagement signal to algorithm.
 """
 
 SUBTITLE_PROMPT = """You are a professional subtitle editor.
@@ -300,6 +316,19 @@ THUMBNAIL CONCEPT:
 - Bold white/yellow text (main hook) — left 60% of image
 - Right 40%: car visual
 - High contrast, readable at 120px
+
+MONETISATION-FOCUSED SEO RULES:
+
+TITLE (car enthusiast CTR):
+- Car name + price/launch year = highest CTR for car content
+- "Tata Harrier EV 2026 — Price Revealed | Launch Date Confirmed"
+- Controversy works: "Why Mahindra XEV 9e is BETTER than Nexon EV"
+
+DESCRIPTION LINE 1: The exact news hook
+DESCRIPTION LINE 2: "Full details on [car name] launch, price, specs | Tech Meets Travel"
+
+TAGS: Car name + variants + year + India + launch
+"tata harrier ev" + "harrier ev price india" + "harrier ev 2026" + "tata ev launch"
 """
 
 THUMBNAIL_PROMPT = """Create a detailed AI image generation prompt for a YouTube thumbnail.
