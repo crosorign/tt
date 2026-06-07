@@ -60,6 +60,8 @@ except ImportError:
 GEMINI_KEY     = os.environ.get("GEMINI_KEY", "")
 GROQ_API_KEY   = os.environ.get("GROQ_API_KEY", "")
 PEXELS_API_KEY = os.environ.get("PEXELS_API_KEY", "")
+GITHUB_TOKEN   = os.environ.get("GITHUB_TOKEN", "")
+GH_MODEL       = "gpt-4o-mini"
 
 GROQ_MODEL   = "llama-3.3-70b-versatile"
 GEMINI_MODEL_ECONOMY  = "gemini-1.5-flash"
@@ -498,6 +500,30 @@ def _call_groq(prompt, max_retries=3):
     return None
 
 
+def _call_github(prompt_text):
+    if not GITHUB_TOKEN:
+        return None
+    import requests
+    try:
+        resp = requests.post(
+            "https://models.inference.ai.azure.com/chat/completions",
+            headers={"Authorization": f"Bearer {GITHUB_TOKEN}", "Content-Type": "application/json"},
+            json={"model": GH_MODEL, "messages": [{"role": "user", "content": prompt_text}],
+                  "temperature": 0.7, "max_tokens": 4000},
+            timeout=60,
+        )
+        if resp.status_code == 200:
+            return resp.json()["choices"][0]["message"]["content"]
+        if resp.status_code == 429:
+            log("GitHub model rate limited")
+        else:
+            log(f"GitHub model returned {resp.status_code}")
+        return None
+    except Exception as e:
+        log(f"GitHub model call failed: {e}")
+        return None
+
+
 def call_llm(prompt_text, task="economy"):
     global _QUOTA_EXHAUSTED
     if _QUOTA_EXHAUSTED and task not in ("script", "topic"):
@@ -512,6 +538,11 @@ def call_llm(prompt_text, task="economy"):
                 return result
         except Exception as e:
             log(f"Groq failed for {task}: {e}")
+
+    if task != "premium":
+        result = _call_github(prompt_text)
+        if result and result.strip():
+            return result
 
     tier_map = {
         "economy":  [GEMINI_MODEL_ECONOMY,  GEMINI_MODEL_STANDARD, GEMINI_MODEL_PREMIUM],
