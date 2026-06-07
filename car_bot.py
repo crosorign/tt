@@ -453,14 +453,14 @@ def _call_gemini(prompt_text, model_name=GEMINI_MODEL_ECONOMY):
             if "429" in str(e) or "quota" in str(e).lower() or "RESOURCE_EXHAUSTED" in str(e):
                 global _QUOTA_EXHAUSTED
                 _QUOTA_EXHAUSTED = True
-                logger.warning(f"Quota exhausted on {model_name}. Attempt {attempt+1}/{max_attempts}")
+                log(f"Quota exhausted on {model_name}. Attempt {attempt+1}/{max_attempts}")
                 if attempt < max_attempts - 1:
                     sleep_time = random.uniform(15, 25) * (2 ** attempt)
-                    logger.info(f"Backing off {sleep_time:.0f}s before retry...")
+                    log(f"Backing off {sleep_time:.0f}s before retry...")
                     time.sleep(sleep_time)
                     continue
             else:
-                logger.error(f"Gemini call failed: {e}")
+                log(f"Gemini call failed: {e}")
                 if attempt < max_attempts - 1:
                     time.sleep(5)
                     continue
@@ -495,17 +495,17 @@ def _call_groq(prompt, max_retries=3):
 def call_llm(prompt_text, task="economy"):
     global _QUOTA_EXHAUSTED
     if _QUOTA_EXHAUSTED and task not in ("script", "topic"):
-        logger.info("Quota exhausted, skipping non-critical LLM call")
+        log("Quota exhausted, skipping non-critical LLM call")
         return ""
 
     if task in ("script", "topic"):
-        logger.info(f"call_llm task={task}: trying Groq (LLaMA) first")
+        log(f"call_llm task={task}: trying Groq (LLaMA) first")
         try:
             result = _call_groq(prompt_text)
             if result.strip():
                 return result
         except Exception as e:
-            logger.warning(f"Groq failed for {task}: {e}")
+            log(f"Groq failed for {task}: {e}")
 
     tier_map = {
         "economy":  [GEMINI_MODEL_ECONOMY,  GEMINI_MODEL_STANDARD, GEMINI_MODEL_PREMIUM],
@@ -514,7 +514,7 @@ def call_llm(prompt_text, task="economy"):
     }
     models = tier_map.get(task, tier_map["economy"])
     for model_name in models:
-        logger.info(f"call_llm task={task} model={model_name}")
+        log(f"call_llm task={task} model={model_name}")
         result = _call_gemini(prompt_text, model_name=model_name)
         if result.strip():
             return result
