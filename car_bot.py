@@ -418,6 +418,17 @@ def load_recent_topics(n=20):
     return topics
 
 
+def deduplicate_topic(topic):
+    """Hard check: if topic was already used, append date to differentiate."""
+    used = load_recent_topics(60)
+    if topic in used:
+        date_str = datetime.datetime.now().strftime("%d-%b-%Y")
+        deduped = f"{topic} — {date_str}"
+        log(f"  🚫 Topic already used → adjusted to: {deduped}")
+        return deduped
+    return topic
+
+
 def save_used_topic(topic):
     try:
         existing = []
@@ -1155,6 +1166,7 @@ def discover_daily_config():
     raw = call_llm(prompt, task="topic")
     try:
         data = parse_json_response(raw)
+        data["topic"] = deduplicate_topic(data["topic"])
         log(f"  📌 Topic: {data['topic']}")
         log(f"  🎭 Format: {data['format']}")
         log(f"  💡 Reason: {data.get('reason','')}")
@@ -1162,7 +1174,7 @@ def discover_daily_config():
     except Exception as e:
         log(f"  ⚠️ JSON parse failed ({e}) — using random evergreen")
         return {
-            "topic":           random.choice(EVERGREEN_TOPICS),
+            "topic":           deduplicate_topic(random.choice(EVERGREEN_TOPICS)),
             "format":          random.choice(CONTENT_FORMAT_TYPES),
             "pexels_keyword":  "car",
             "hook_angle":      "Here's the biggest car story you need to know today.",
