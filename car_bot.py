@@ -1804,20 +1804,6 @@ def daemon_mode():
         time.sleep(30)
 
 
-def safe_process_video(*args, **kwargs):
-    """Wrapper — catches all exceptions so workflow never exits non-zero."""
-    try:
-        return process_video(*args, **kwargs)
-    except Exception as e:
-        log(f"❌ Fatal error: {e}")
-        try:
-            failure_alert(f"Fatal error: {str(e)[:200]}")
-        except:
-            print(f"::error title=Bot Error::{str(e)[:200]}")
-        return None
-
-
-
 def main():
     if not GEMINI_KEY and not GROQ_API_KEY:
         print("ERROR: Set GEMINI_KEY or GROQ_API_KEY"); sys.exit(1)
@@ -1845,7 +1831,7 @@ def main():
         daemon_mode(); return
 
     if args.topic:
-        safe_safe_safe_process_video(topic=args.topic, format_type=args.format,
+        safe_process_video(topic=args.topic, format_type=args.format,
                       upload=args.upload, privacy=args.privacy)
     elif args.day:
         safe_process_video(upload=args.upload, privacy=args.privacy)
