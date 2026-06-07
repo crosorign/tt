@@ -1,0 +1,63 @@
+name: YouTube Settings Optimiser
+
+on:
+  schedule:
+    - cron: "0 4 * * 0"   # Every Sunday 9:30 AM IST
+  workflow_dispatch:
+    inputs:
+      max_videos:
+        description: "Max videos to update (default 50)"
+        required: false
+        default: "50"
+      dry_run:
+        description: "Dry run? yes/no"
+        required: false
+        default: "no"
+
+permissions:
+  contents: read
+
+env:
+  GEMINI_KEY:            ${{ secrets.GEMINI_KEY }}
+  GROQ_API_KEY:          ${{ secrets.GROQ_API_KEY }}
+  GITHUB_TOKEN:          ${{ secrets.GH_PAT_TOKEN }}
+  YOUTUBE_TOKEN_BASE64:  ${{ secrets.YOUTUBE_TOKEN_BASE64 }}
+  CLIENT_SECRETS_BASE64: ${{ secrets.CLIENT_SECRETS_BASE64 }}
+
+jobs:
+  optimise:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install deps
+        run: |
+          pip install --quiet \
+            google-api-python-client google-auth-oauthlib google-auth-httplib2
+
+      - name: Restore YouTube token
+        run: |
+          [ -n "$YOUTUBE_TOKEN_BASE64" ] && \
+            echo "$YOUTUBE_TOKEN_BASE64" | base64 -d > youtube_token.pickle
+          [ -n "$CLIENT_SECRETS_BASE64" ] && \
+            echo "$CLIENT_SECRETS_BASE64" | base64 -d > client_secrets.json
+
+      - name: Run optimiser
+        run: |
+          MAX="${{ github.event.inputs.max_videos || '50' }}"
+          DRY="${{ github.event.inputs.dry_run || 'no' }}"
+          FLAGS="--max $MAX"
+          [ "$DRY" = "yes" ] && FLAGS="$FLAGS --dry-run"
+          echo "Running: python3 yt_optimiser.py --channel tt $FLAGS"
+          python3 yt_optimiser.py --channel tt $FLAGS \
+            || echo "⚠️ Optimiser error — check logs"
+
+      - name: Summary
+        if: always()
+        run: echo "✅ YouTube settings optimiser completed"
