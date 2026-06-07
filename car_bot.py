@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Tech Meets Travel — CAR NEWS AUTOMATION BOT v1.0
+Tech Meets Travel — CAR NEWS AUTOMATION BOT v1.1
 Fully automated YouTube channel for Indian car news.
 Daily 2-min videos · English · Auto upload · GitHub Actions
 
@@ -80,11 +80,11 @@ YOUTUBE_CLIENT_SECRETS = "client_secrets.json"
 CHANNEL_NAME   = "Tech Meets Travel"
 CHANNEL_HANDLE = "@tech_meets_travel"
 
-TARGET_MIN_WORDS = 220
-TARGET_MAX_WORDS = 280
+TARGET_MIN_WORDS = 280
+TARGET_MAX_WORDS = 340
 
-VOICE_FEMALE = "en-US-JennyNeural"
-VOICE_MALE   = "en-US-GuyNeural"
+VOICE_FEMALE = "en-IN-NeerjaNeural"   # Indian English female
+VOICE_MALE   = "en-IN-PrabhatNeural"  # Indian English male
 
 EQ_FEMALE = (
     "highpass=f=80,"
@@ -891,7 +891,7 @@ def create_video(script_text, english_subtitles, images_input, output_name,
     t0 = time.time()
     try:
         r = run(["edge-tts", "--file", script_file, "--voice", voice_id,
-                 "--rate=-10%", "--pitch=+0Hz", "--write-media", voice_file],
+                 "--rate=-13%", "--pitch=+0Hz", "--write-media", voice_file],
                 timeout=300)
     except subprocess.TimeoutExpired:
         log("❌ TTS timeout"); return None
@@ -947,7 +947,8 @@ def create_video(script_text, english_subtitles, images_input, output_name,
     cmd.extend(["-i", audio, "-filter_complex", vfilter,
                 "-map", f"[{vlabel}]", "-map", f"{num_inputs}:a",
                 "-c:v", "libx264", "-preset", "veryfast", "-crf", "24",
-                "-pix_fmt", "yuv420p", "-c:a", "aac", "-shortest",
+                "-pix_fmt", "yuv420p", "-c:a", "aac",
+                "-ar", "44100", "-ac", "2",
                 "-avoid_negative_ts", "make_zero", raw_file])
     r = run(cmd, timeout=400)
     if r.returncode != 0:
@@ -955,7 +956,8 @@ def create_video(script_text, english_subtitles, images_input, output_name,
                  "-vf", "scale=1920:1080:force_original_aspect_ratio=decrease,"
                         "pad=1920:1080:(ow-iw)/2:(oh-ih)/2",
                  "-c:v", "libx264", "-preset", "veryfast", "-crf", "24",
-                 "-pix_fmt", "yuv420p", "-c:a", "aac", "-shortest", raw_file],
+                 "-pix_fmt", "yuv420p", "-c:a", "aac",
+                 "-ar", "44100", "-ac", "2", raw_file],
                 timeout=300)
         if r.returncode != 0:
             log("❌ Video encoding failed"); return None
@@ -1406,6 +1408,12 @@ def validate_tags(tags_str):
     return ", ".join(result)
 
 
+
+def failure_alert(message):
+    """GitHub Actions error annotation — visible in CI summary."""
+    print(f"::error title=Tech Meets Travel Bot Error::{message}")
+    log(f"❌ ALERT: {message}")
+
 def upload_to_youtube(video_path, metadata, privacy="public"):
     if not os.path.exists(video_path):
         log(f"❌ Video not found: {video_path}"); return None
@@ -1439,6 +1447,7 @@ def upload_to_youtube(video_path, metadata, privacy="public"):
 
         if metadata.get("pinned_comment"):
             try:
+                time.sleep(30)   # avoid rapid-fire spam detection
                 youtube.commentThreads().insert(
                     part="snippet",
                     body={"snippet": {"videoId": vid, "topLevelComment": {
