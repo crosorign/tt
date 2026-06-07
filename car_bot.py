@@ -1717,19 +1717,35 @@ def safe_process_video(topic=None, format_type=None, upload=False, privacy="publ
 
         if upload:
             log("⬆️ Uploading to YouTube...")
+            # ── Main video upload (independent) ──
             try:
                 vid = upload_to_youtube(video, metadata, privacy)
                 if vid:
                     log(f"✅ Live: https://youtu.be/{vid}")
                     get_series_info(topic_val, video_id=vid)
-                    # Upload Short
-                    short_path = f"{SHORTS_DIR}/{safe_name}_short.mp4"
-                    _yt = get_authenticated_service()
-                    if _yt:
-                        upload_short_to_youtube(short_path, metadata.get("title",""),
-                            metadata.get("description",""), metadata.get("tags",""), _yt)
             except Exception as e:
-                log(f"⚠️ Upload failed (non-fatal): {e}")
+                log(f"⚠️ Main video upload failed: {e}")
+
+            # ── Short upload (fully independent — never affects main video) ──
+            try:
+                short_path = f"{SHORTS_DIR}/{safe_name}_short.mp4"
+                if os.path.exists(short_path):
+                    _yt2 = get_authenticated_service()
+                    if _yt2:
+                        upload_short_to_youtube(
+                            short_path,
+                            metadata.get("title", ""),
+                            metadata.get("description", ""),
+                            metadata.get("tags", ""),
+                            _yt2
+                        )
+                        log("✅ Short uploaded independently")
+                    else:
+                        log("  ⚠️ Short: YouTube auth unavailable")
+                else:
+                    log(f"  ℹ️ Short not found at {short_path}")
+            except Exception as short_err:
+                log(f"  ⚠️ Short upload failed (main video unaffected): {short_err}")
     else:
         log(f"❌ Video creation failed ({elapsed:.0f}s)")
 
