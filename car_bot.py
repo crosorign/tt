@@ -1783,7 +1783,7 @@ def main():
         safe_process_video(topic=args.topic, format_type=args.format,
                       upload=args.upload, privacy=args.privacy)
     elif args.day:
-        process_video(upload=args.upload, privacy=args.privacy)
+        safe_process_video(upload=args.upload, privacy=args.privacy)
     else:
         print("Usage:")
         print("  python car_bot.py --day today")
