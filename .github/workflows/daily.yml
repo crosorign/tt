@@ -138,7 +138,7 @@ jobs:
           fi
 
           echo "▶ Running: $CMD (slot=$SLOT)"
-          eval $CMD
+          eval $CMD || echo "⚠️ Bot error — video may still be saved"
 
       - name: Show results
         if: always()
@@ -162,3 +162,4 @@ jobs:
             scripts/
             thumbnails/
           retention-days: 14
+          if-no-files-found: warn

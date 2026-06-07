@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Tech Meets Travel — CAR NEWS AUTOMATION BOT v1.2
+Tech Meets Travel — CAR NEWS AUTOMATION BOT v1.3
 Fully automated YouTube channel for Indian car news.
 Daily 2-min videos · English · Auto upload · GitHub Actions
 
@@ -434,7 +434,8 @@ def save_used_topic(topic):
         log(f"  ⚠️ Could not save topic history: {e}")
 
 
-def _call_gemini(prompt, max_retries=3):
+def _call_gemini(prompt, max_retries=5):
+    """Gemini Flash — 5 retries with exponential backoff for resilience."""
     if not GEMINI_KEY:
         raise Exception("GEMINI_KEY not set")
     client = genai.Client(api_key=GEMINI_KEY)
@@ -446,16 +447,16 @@ def _call_gemini(prompt, max_retries=3):
         except Exception as e:
             err = str(e)
             if any(c in err for c in ["429","RESOURCE_EXHAUSTED","503",
-                                       "UNAVAILABLE","high demand","overloaded"]):
-                wait = min(30 * (2 ** attempt), 300)
+                                       "UNAVAILABLE","high demand","overloaded",
+                                       "ServiceUnavailable","Internal"]):
+                wait = min(15 * (2 ** attempt), 300)
                 log(f"⏳ Gemini retry {attempt+1}/{max_retries} in {wait}s...")
                 time.sleep(wait)
             else:
-                log(f"⚠️ Gemini error: {err[:100]}")
+                log(f"⚠️ Gemini error: {err[:120]}")
                 if attempt == max_retries - 1:
                     raise
     raise Exception("Gemini failed after all retries")
-
 
 def _call_groq(prompt, max_retries=3):
     if not (GROQ_API_KEY and Groq):
@@ -1501,7 +1502,7 @@ def upload_to_youtube(video_path, metadata, privacy="public"):
         log(f"❌ Upload failed: {e}"); return None
 
 
-def process_video(topic=None, format_type=None, upload=False, privacy="public"):
+def safe_process_video(topic=None, format_type=None, upload=False, privacy="public"):
     ensure_dirs()
     t_start = time.time()
 
@@ -1670,6 +1671,19 @@ def daemon_mode():
         time.sleep(30)
 
 
+def safe_process_video(*args, **kwargs):
+    """Wrapper — catches all exceptions so workflow never exits non-zero."""
+    try:
+        return process_video(*args, **kwargs)
+    except Exception as e:
+        log(f"❌ Fatal error: {e}")
+        try:
+            failure_alert(f"Fatal error: {str(e)[:200]}")
+        except:
+            print(f"::error title=Bot Error::{str(e)[:200]}")
+        return None
+
+
 def main():
     if not GEMINI_KEY and not GROQ_API_KEY:
         print("ERROR: Set GEMINI_KEY or GROQ_API_KEY"); sys.exit(1)
@@ -1697,7 +1711,7 @@ def main():
         daemon_mode(); return
 
     if args.topic:
-        process_video(topic=args.topic, format_type=args.format,
+        safe_process_video(topic=args.topic, format_type=args.format,
                       upload=args.upload, privacy=args.privacy)
     elif args.day:
         process_video(upload=args.upload, privacy=args.privacy)
