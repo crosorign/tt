@@ -62,6 +62,10 @@ GROQ_API_KEY   = os.environ.get("GROQ_API_KEY", "")
 PEXELS_API_KEY = os.environ.get("PEXELS_API_KEY", "")
 
 GROQ_MODEL   = "llama-3.3-70b-versatile"
+GEMINI_MODEL_ECONOMY  = "gemini-1.5-flash"
+GEMINI_MODEL_STANDARD = "gemini-2.0-flash"
+GEMINI_MODEL_PREMIUM  = "gemini-2.5-flash"
+_QUOTA_EXHAUSTED = False
 BGM_FILE     = "bgm.mp3"
 OUTPUT_DIR   = "videos"
 SHORTS_DIR   = "shorts"
@@ -433,29 +437,35 @@ def save_used_topic(topic):
         log(f"  ⚠️ Could not save topic history: {e}")
 
 
-def _call_gemini(prompt, max_retries=5):
-    """Gemini Flash — 5 retries with exponential backoff for resilience."""
+def _call_gemini(prompt_text, model_name=GEMINI_MODEL_ECONOMY):
+    import time
+    import random
     if not GEMINI_KEY:
         raise Exception("GEMINI_KEY not set")
     client = genai.Client(api_key=GEMINI_KEY)
-    for attempt in range(max_retries):
+    max_attempts = 5
+    for attempt in range(max_attempts):
         try:
             resp = client.models.generate_content(
-                model="gemini-2.5-flash", contents=prompt)
+                model=model_name, contents=prompt_text)
             return resp.text
         except Exception as e:
-            err = str(e)
-            if any(c in err for c in ["429","RESOURCE_EXHAUSTED","503",
-                                       "UNAVAILABLE","high demand","overloaded",
-                                       "ServiceUnavailable","Internal"]):
-                wait = min(15 * (2 ** attempt), 300)
-                log(f"⏳ Gemini retry {attempt+1}/{max_retries} in {wait}s...")
-                time.sleep(wait)
+            if "429" in str(e) or "quota" in str(e).lower() or "RESOURCE_EXHAUSTED" in str(e):
+                global _QUOTA_EXHAUSTED
+                _QUOTA_EXHAUSTED = True
+                logger.warning(f"Quota exhausted on {model_name}. Attempt {attempt+1}/{max_attempts}")
+                if attempt < max_attempts - 1:
+                    sleep_time = random.uniform(15, 25) * (2 ** attempt)
+                    logger.info(f"Backing off {sleep_time:.0f}s before retry...")
+                    time.sleep(sleep_time)
+                    continue
             else:
-                log(f"⚠️ Gemini error: {err[:120]}")
-                if attempt == max_retries - 1:
-                    raise
-    raise Exception("Gemini failed after all retries")
+                logger.error(f"Gemini call failed: {e}")
+                if attempt < max_attempts - 1:
+                    time.sleep(5)
+                    continue
+            return ""
+    return ""
 
 def _call_groq(prompt, max_retries=3):
     if not (GROQ_API_KEY and Groq):
@@ -482,20 +492,33 @@ def _call_groq(prompt, max_retries=3):
     return None
 
 
-def call_llm(prompt, max_retries=3):
-    return _call_gemini(prompt, max_retries)
+def call_llm(prompt_text, task="economy"):
+    global _QUOTA_EXHAUSTED
+    if _QUOTA_EXHAUSTED and task not in ("script", "topic"):
+        logger.info("Quota exhausted, skipping non-critical LLM call")
+        return ""
 
+    if task in ("script", "topic"):
+        logger.info(f"call_llm task={task}: trying Groq (LLaMA) first")
+        try:
+            result = _call_groq(prompt_text)
+            if result.strip():
+                return result
+        except Exception as e:
+            logger.warning(f"Groq failed for {task}: {e}")
 
-def call_llm_groq(prompt, max_retries=3):
-    result = _call_groq(prompt, max_retries)
-    if result:
-        return result
-    log("  Groq unavailable — using Gemini")
-    return _call_gemini(prompt, max_retries)
-
-
-def call_llm_gemini(prompt, max_retries=3):
-    return _call_gemini(prompt, max_retries)
+    tier_map = {
+        "economy":  [GEMINI_MODEL_ECONOMY,  GEMINI_MODEL_STANDARD, GEMINI_MODEL_PREMIUM],
+        "standard": [GEMINI_MODEL_STANDARD, GEMINI_MODEL_PREMIUM],
+        "premium":  [GEMINI_MODEL_PREMIUM],
+    }
+    models = tier_map.get(task, tier_map["economy"])
+    for model_name in models:
+        logger.info(f"call_llm task={task} model={model_name}")
+        result = _call_gemini(prompt_text, model_name=model_name)
+        if result.strip():
+            return result
+    return ""
 
 
 def parse_json_response(raw):
@@ -1089,7 +1112,7 @@ def discover_daily_config():
     if slot_note:
         prompt += f"\n\n{slot_note}"
 
-    raw = call_llm(prompt)
+    raw = call_llm(prompt, task="topic")
     try:
         data = parse_json_response(raw)
         log(f"  📌 Topic: {data['topic']}")
@@ -1130,7 +1153,7 @@ def generate_script(topic, format_type, hook_angle, voice_gender):
 
     text = ""
     for attempt in range(3):
-        resp = call_llm_groq(build_prompt(attempt))
+        resp = call_llm(build_prompt(attempt), task="script")
         words = len(resp.strip().split())
         log(f"  Attempt {attempt+1}: {words} words")
         if words >= TARGET_MIN_WORDS:
@@ -1150,12 +1173,13 @@ def generate_script(topic, format_type, hook_angle, voice_gender):
 
 
 def generate_subtitles(script):
-    log("  🌐 Generating subtitles...")
-    prompt = SUBTITLE_PROMPT.format(script=script)
-    raw = call_llm(prompt)
-    lines = [l.strip() for l in raw.split("\n") if l.strip()]
-    log(f"  ✅ {len(lines)} subtitle lines")
-    return lines
+    import textwrap
+    words = script.strip().split()
+    lines = textwrap.wrap(' '.join(words), width=40)
+    subtitles = []
+    for i, line in enumerate(lines, 1):
+        subtitles.append(f"{i}\\n{line}")
+    return subtitles
 
 
 def generate_metadata(topic, format_type, hook_angle):
@@ -1213,18 +1237,34 @@ Return ONLY a short source attribution (max 40 chars):
 Return ONLY the source string, nothing else."""
 
 
-def get_source_citation(topic, format_type):
-    try:
-        prompt = SOURCE_PROMPT.format(topic=topic, format_type=format_type)
-        raw = call_llm(prompt).strip().strip('"').strip("'")
-        if "Source:" in raw and len(raw) < 50:
-            return raw
-        return "Source: Autocar India"
-    except:
-        return "Source: Autocar India"
+def get_source_citation(topic):
+    citations = {
+        "car": "https://www.cardekho.com",
+        "bike": "https://www.bikedekho.com",
+        "toyota": "https://www.toyota.com",
+        "honda": "https://www.honda.com",
+        "hyundai": "https://www.hyundai.com",
+        "tata": "https://www.tatamotors.com",
+        "mahindra": "https://www.mahindra.com",
+        "maruti": "https://www.marutisuzuki.com",
+        "ev": "https://www.ev.com",
+        "electric": "https://www.ev.com",
+    }
+    topic_lower = topic.lower()
+    for keyword, url in citations.items():
+        if keyword in topic_lower:
+            return url
+    return "https://www.wikipedia.org"
 
 
 SERIES_FILE = "video_series.json"
+
+def generate_mcq(topic):
+    return [
+        {"question": f"{topic} பற்றி மேலும் அறிய விரும்புகிறீர்களா?", "options": ["ஆம்", "இல்லை"], "answer": 0},
+        {"question": "இந்த தகவல் உங்களுக்கு பயனுள்ளதாக இருந்ததா?", "options": ["மிகவும் பயனுள்ளது", "சரி", "பயனற்றது"], "answer": 0},
+    ]
+
 
 SERIES_TOPIC_GROUPS = {
     "tata":       ["tata", "harrier", "safari", "nexon", "curvv", "altroz", "tiago"],
@@ -1672,7 +1712,7 @@ def safe_process_video(topic=None, format_type=None, upload=False, privacy="publ
     elif part_num == 1:
         log(f"  📚 New series started: {series_title}")
 
-    source_citation = get_source_citation(topic_val, fmt)
+    source_citation = get_source_citation(topic_val)
 
     with open(f"{SCRIPTS_DIR}/{safe_name}.txt", "w", encoding="utf-8") as f:
         f.write(f"TOPIC: {topic_val}\nFORMAT: {fmt}\n\n{script}")
