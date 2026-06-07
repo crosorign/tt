@@ -1189,7 +1189,7 @@ def generate_metadata(topic, format_type, hook_angle):
         format_type=format_type,
         hook_angle=hook_angle,
     )
-    raw = call_llm(prompt)
+    raw = call_llm(prompt, task="script")
     try:
         return parse_json_response(raw)
     except Exception as e:
