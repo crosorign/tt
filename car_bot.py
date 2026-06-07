@@ -69,7 +69,6 @@ METADATA_DIR = "metadata"
 SCRIPTS_DIR  = "scripts"
 PEXELS_DIR   = "pexels_images"
 SUBS_DIR     = "subtitles"
-THUMBNAIL_DIR = "thumbnails"
 QUEUE_FILE   = "upload_queue.json"
 
 YOUTUBE_SCOPES         = ["https://www.googleapis.com/auth/youtube",
@@ -837,65 +836,6 @@ def build_video_filter(images, total_frames, fps=25, seed=0):
     return num, ";".join(filters), prev
 
 
-def generate_thumbnail(title, format_type, output_name):
-    try:
-        from PIL import Image, ImageDraw, ImageFont
-        os.makedirs(THUMBNAIL_DIR, exist_ok=True)
-
-        format_colors = {
-            "news":       {"bg": (180, 30, 30),   "accent": (255, 200, 0)},
-            "launch":     {"bg": (200, 80, 0),    "accent": (255, 255, 255)},
-            "comparison": {"bg": (20, 40, 100),   "accent": (255, 200, 0)},
-            "explainer":  {"bg": (10, 60, 100),   "accent": (255, 200, 0)},
-            "ev":         {"bg": (10, 80, 60),    "accent": (0, 255, 200)},
-            "suv":        {"bg": (50, 50, 20),    "accent": (255, 150, 0)},
-            "default":    {"bg": (10, 30, 60),    "accent": (255, 200, 0)},
-        }
-
-        cfg = format_colors.get(format_type, format_colors["default"])
-        W, H = 1280, 720
-        img = Image.new("RGB", (W, H), cfg["bg"])
-        d = ImageDraw.Draw(img)
-
-        for x in range(200):
-            alpha = 1 - (x / 200)
-            r = int(cfg["bg"][0] * (1-alpha) + 10 * alpha)
-            g = int(cfg["bg"][1] * (1-alpha) + 80 * alpha)
-            b = int(cfg["bg"][2] * (1-alpha) + 60 * alpha)
-            d.rectangle([x, 0, x+1, H], fill=(r, g, b))
-
-        d.rectangle([0, 0, W, 12], fill=cfg["accent"])
-        d.rectangle([0, H-12, W, H], fill=cfg["accent"])
-
-        font = ImageFont.load_default()
-        d.text((30, H - 55), "Tech Meets Travel", fill=(200, 200, 200), font=font)
-
-        title_clean = title[:90]
-        words = title_clean.split()
-        lines, line = [], ""
-        for w in words:
-            if len(line + w) < 22:
-                line += w + " "
-            else:
-                lines.append(line.strip())
-                line = w + " "
-        if line:
-            lines.append(line.strip())
-
-        y = max(80, H//2 - len(lines) * 40)
-        for l in lines[:4]:
-            d.text((30, y), l, fill=(255, 255, 255), font=font)
-            y += 55
-
-        out = f"{THUMBNAIL_DIR}/{output_name}_thumb.png"
-        img.save(out)
-        log(f"  ✅ Thumbnail: {out}")
-        return out
-    except Exception as e:
-        log(f"  ⚠️ Thumbnail generation failed: {e}")
-        return None
-
-
 def create_video(script_text, english_subtitles, images_input, output_name,
                  format_type="default", title_short="", bgm_path=None,
                  source_citation="", topic_val=""):
@@ -1443,6 +1383,135 @@ def failure_alert(message):
     """GitHub Actions error annotation — visible in CI summary."""
     print(f"::error title=Tech Meets Travel Bot Error::{message}")
     log(f"❌ ALERT: {message}")
+
+
+THUMBNAIL_DIR = "thumbnails"
+TAMIL_BOLD_FONT = "/usr/share/fonts/truetype/noto/NotoSansTamil-Bold.ttf"
+ENG_BOLD_FONT   = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
+ENG_REG_FONT    = "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
+
+TT_THUMB_FORMATS = {
+    "news":       {"c1":(8,12,25),   "c2":(20,8,40),  "acc":(232,0,28),   "bb":(185,0,0),    "badge":"BREAKING"},
+    "launch":     {"c1":(5,25,8),    "c2":(2,10,3),   "acc":(0,215,95),   "bb":(0,165,65),   "badge":"LAUNCH"},
+    "comparison": {"c1":(8,8,32),    "c2":(2,2,18),   "acc":(50,148,255), "bb":(25,98,215),  "badge":"VS"},
+    "explainer":  {"c1":(10,20,38),  "c2":(3,8,22),   "acc":(255,178,0),  "bb":(198,128,0),  "badge":"EXPLAINED"},
+    "ev":         {"c1":(0,22,26),   "c2":(0,8,12),   "acc":(0,228,198),  "bb":(0,175,155),  "badge":"EV"},
+    "suv":        {"c1":(22,12,4),   "c2":(8,4,0),    "acc":(255,138,0),  "bb":(198,88,0),   "badge":"SUV"},
+    "default":    {"c1":(8,12,25),   "c2":(3,5,18),   "acc":(255,198,0),  "bb":(178,138,0),  "badge":"NEWS"},
+}
+
+def generate_thumbnail(title, format_type, output_name):
+    """Generate premium automotive thumbnail — format-specific color palette."""
+    try:
+        from PIL import Image, ImageDraw, ImageFont
+        import math
+        os.makedirs(THUMBNAIL_DIR, exist_ok=True)
+
+        W, H = 1280, 720
+        cfg = TT_THUMB_FORMATS.get(format_type, TT_THUMB_FORMATS["default"])
+        img = Image.new("RGB", (W, H), cfg["c1"])
+        d   = ImageDraw.Draw(img)
+
+        def load_font(size, bold=True):
+            try: return ImageFont.truetype(ENG_BOLD_FONT if bold else ENG_REG_FONT, size)
+            except: return ImageFont.load_default()
+
+        def bg_grad():
+            for y in range(H):
+                t = y/H
+                col = tuple(int(cfg["c1"][j]+(cfg["c2"][j]-cfg["c1"][j])*t) for j in range(3))
+                d.line([(0,y),(W,y)], fill=col)
+
+        def shadow_text(x, y, text, font, fill):
+            for ox,oy in [(3,3),(-2,-2),(2,-2),(-2,2)]:
+                d.text((x+ox,y+oy), text, font=font, fill=(0,0,0))
+            d.text((x,y), text, font=font, fill=fill)
+
+        def wrap_title(text, n=18):
+            words = text.split()
+            lines, line = [], ""
+            for w in words:
+                if len(line+w)<=n: line+=w+" "
+                else:
+                    if line: lines.append(line.strip())
+                    line=w+" "
+            if line: lines.append(line.strip())
+            return lines[:3]
+
+        bg_grad()
+
+        # Diagonal accent panel (right 35%)
+        px = int(W*0.63)
+        for x in range(px,W):
+            t = (x-px)/(W-px)
+            col = tuple(max(0,int(c*(1-t*0.4))) for c in cfg["c2"])
+            d.line([(x,0),(x,H)],fill=col)
+        d.polygon([(px-35,0),(px+35,0),(px-35,H),(px-90,H)], fill=cfg["c2"])
+
+        # Grid lines (tech aesthetic)
+        for x in range(0,W,90):
+            d.line([(x,0),(x,H)], fill=(*cfg["c2"],), width=1)
+        for y in range(0,H,90):
+            d.line([(0,y),(W,y)], fill=(*cfg["c2"],), width=1)
+
+        # Car silhouette (right panel)
+        car_cx, car_cy = px+(W-px)//2, H//2+20
+        s = 1.6
+        body = [
+            (car_cx-int(118*s),car_cy+int(22*s)), (car_cx-int(120*s),car_cy-int(7*s)),
+            (car_cx-int(92*s), car_cy-int(32*s)), (car_cx-int(28*s), car_cy-int(58*s)),
+            (car_cx+int(42*s), car_cy-int(58*s)), (car_cx+int(102*s),car_cy-int(28*s)),
+            (car_cx+int(120*s),car_cy-int(7*s)),  (car_cx+int(122*s),car_cy+int(22*s)),
+        ]
+        d.polygon(body, fill=(32,35,50))
+        d.polygon(body, outline=cfg["acc"], width=2)
+        wind = [
+            (car_cx-int(82*s),car_cy-int(30*s)), (car_cx-int(25*s),car_cy-int(54*s)),
+            (car_cx+int(38*s),car_cy-int(54*s)), (car_cx+int(92*s),car_cy-int(26*s)),
+            (car_cx+int(36*s),car_cy-int(12*s)), (car_cx-int(22*s),car_cy-int(12*s)),
+        ]
+        d.polygon(wind, fill=(22,52,98))
+        for wx,wy in [(car_cx-int(72*s),car_cy+int(28*s)),(car_cx+int(72*s),car_cy+int(28*s))]:
+            r = int(25*s)
+            d.ellipse([wx-r,wy-r,wx+r,wy+r], fill=(12,12,18))
+            d.ellipse([wx-r+3,wy-r+3,wx+r-3,wy+r-3], outline=cfg["acc"], width=2)
+            d.ellipse([wx-7,wy-7,wx+7,wy+7], fill=(45,48,58))
+        d.ellipse([car_cx+int(116*s)-5,car_cy-int(4*s)-3,
+                   car_cx+int(116*s)+5,car_cy-int(4*s)+3], fill=(255,238,178))
+
+        # Borders
+        d.rectangle([0,0,W,10], fill=cfg["acc"])
+        d.rectangle([0,H-10,W,H], fill=cfg["acc"])
+
+        # Format badge
+        badge = cfg["badge"]
+        bw = len(badge)*16+42
+        bfont = load_font(22)
+        d.rounded_rectangle([W-bw-18,16,W-18,62], radius=8, fill=cfg["bb"])
+        d.text((W-bw//2-18,39), badge, font=bfont, fill=(255,255,255), anchor="mm")
+
+        # Channel handle
+        hfont = load_font(20, bold=False)
+        d.text((28,H-38), "@tech_meets_travel", font=hfont, fill=(158,162,178))
+
+        # Title text
+        lines = wrap_title(title, 17)
+        ty = 105
+        for i,line in enumerate(lines):
+            font = load_font(82 if i==0 else 56)
+            col  = (255,255,255) if i==0 else (198,202,218)
+            shadow_text(28, ty, line, font, col)
+            ty += (92 if i==0 else 64)
+
+        d.rectangle([28,ty+5,min(28+420,px-15),ty+11], fill=cfg["acc"])
+
+        out = f"{THUMBNAIL_DIR}/{output_name}_thumb.png"
+        img.save(out)
+        log(f"  ✅ Thumbnail: {out}")
+        return out
+    except Exception as e:
+        log(f"  ⚠️ Thumbnail failed: {e}")
+        return None
 
 def upload_to_youtube(video_path, metadata, privacy="public"):
     if not os.path.exists(video_path):
