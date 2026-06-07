@@ -1042,7 +1042,7 @@ def create_video(script_text, english_subtitles, images_input, output_name,
         r_wm = run(["ffmpeg", "-y",
                     "-i", video_file, "-i", LOGO_WATERMARK,
                     "-filter_complex",
-                    "overlay=W-130:H-130:format=auto",
+                    "[1:v]scale=200:200[wm];[0:v][wm]overlay=W-220:H-220:format=auto",
                     "-c:v", "libx264", "-preset", "veryfast", "-crf", "24",
                     "-c:a", "copy", wm_file], timeout=300)
         if r_wm.returncode == 0:
