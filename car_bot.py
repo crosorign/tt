@@ -438,6 +438,9 @@ def save_used_topic(topic):
 
 
 def _call_gemini(prompt_text, model_name=GEMINI_MODEL_ECONOMY):
+    global _QUOTA_EXHAUSTED
+    if _QUOTA_EXHAUSTED:
+        return ""
     import time
     import random
     if not GEMINI_KEY:
@@ -452,7 +455,6 @@ def _call_gemini(prompt_text, model_name=GEMINI_MODEL_ECONOMY):
         except Exception as e:
             err_str = str(e)
             if "429" in err_str or "quota" in err_str.lower() or "RESOURCE_EXHAUSTED" in err_str:
-                global _QUOTA_EXHAUSTED
                 _QUOTA_EXHAUSTED = True
                 log(f"Quota exhausted on {model_name}. Attempt {attempt+1}/{max_attempts}")
                 if attempt < max_attempts - 1:
@@ -518,6 +520,9 @@ def call_llm(prompt_text, task="economy"):
     }
     models = tier_map.get(task, tier_map["economy"])
     for model_name in models:
+        if _QUOTA_EXHAUSTED:
+            log(f"Quota exhausted, skipping remaining models in tier")
+            break
         log(f"call_llm task={task} model={model_name}")
         result = _call_gemini(prompt_text, model_name=model_name)
         if result and result.strip():
