@@ -535,7 +535,7 @@ def _call_github(prompt_text):
         return None
 
 
-def call_llm(prompt_text, task="economy"):
+def call_llm(prompt_text, prefer="gemini", max_tokens=2000):
     global _QUOTA_EXHAUSTED
     if _QUOTA_EXHAUSTED and task not in ("script", "topic"):
         log("Quota exhausted, skipping non-critical LLM call")
@@ -1163,7 +1163,7 @@ def discover_daily_config():
     if slot_note:
         prompt += f"\n\n{slot_note}"
 
-    raw = call_llm(prompt, task="topic")
+    raw = call_llm(prompt, prefer="gemini", max_tokens=1000)
     try:
         data = parse_json_response(raw)
         data["topic"] = deduplicate_topic(data["topic"])
@@ -1205,7 +1205,7 @@ def generate_script(topic, format_type, hook_angle, voice_gender):
 
     text = ""
     for attempt in range(3):
-        resp = call_llm(build_prompt(attempt), task="script")
+        resp = call_llm(build_prompt(attempt))
         words = len(resp.strip().split())
         log(f"  Attempt {attempt+1}: {words} words")
         if words >= TARGET_MIN_WORDS:
@@ -1244,7 +1244,7 @@ def generate_metadata(topic, format_type, hook_angle):
         format_type=format_type,
         hook_angle=hook_angle,
     )
-    raw = call_llm(prompt, task="script")
+    raw = call_llm_groq(prompt, max_retries=3)
     try:
         return parse_json_response(raw)
     except Exception as e:
