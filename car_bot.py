@@ -174,21 +174,21 @@ PEXELS_QUERIES = {
 }
 
 EVERGREEN_TOPICS = [
-    "Top 5 SUVs launching in India this year",
-    "Tata Harrier vs Mahindra XUV700 — which is better?",
-    "Best electric cars under 20 lakhs in India",
-    "Upcoming Maruti Suzuki cars in 2026",
-    "Mahindra Thar Roxx — complete details",
-    "Hyundai Creta 2026 facelift — what's new?",
-    "SUV vs Sedan — which is right for you?",
-    "Top 10 concept cars that became reality",
-    "Best budget cars for first-time buyers in India",
-    "EV vs Petrol — real cost comparison over 5 years",
-    "Upcoming Tata cars in 2026",
-    "Kia EV9 launched in India — full review",
-    "Best 7-seater SUVs in India under 25 lakhs",
-    "CNG vs Petrol vs EV — which fuel makes sense?",
-    "Upcoming Hyundai cars lineup 2026",
+    "Why the Nexon EV base variant is the smartest buy — not the top spec",
+    "Maruti Jimny vs Mahindra Thar: Which actually goes off-road in India?",
+    "The real cost of owning an EV in India for 5 years vs petrol — exact numbers",
+    "Why dealers push this model over that one — the truth nobody talks about",
+    "India's most returned car: what buyers regret after 6 months",
+    "Hyundai Creta vs Tata Nexon: I tested both, here's my honest pick",
+    "The one variant to avoid in every popular Indian car — buyer trap explained",
+    "Hidden costs of buying a car in India nobody tells you before purchase",
+    "Why the waiting period for this SUV means you should buy the competitor",
+    "CNG vs Electric vs Petrol: Which actually saves money after 3 years?",
+    "The car that outsells everything else — but should you actually buy it?",
+    "Mahindra BE 6 real owner review after 3 months: honest problems",
+    "Why your car insurance is probably costing ₹20,000 extra every year",
+    "The safest cars in India under ₹15 lakh — crash test results explained",
+    "Upcoming launches that will destroy resale value of current bestsellers",
 ]
 
 CONTENT_FORMAT_TYPES = [
@@ -203,37 +203,37 @@ CONTENT_FORMAT_TYPES = [
 DAILY_TOPIC_PROMPT = """You are a content strategist for "Tech Meets Travel" — India's sharpest car news YouTube channel.
 
 TODAY: {date} | {day}
-FRESH CAR NEWS (from Indian automotive sites): {car_news}
-TRENDING SEARCHES IN INDIA: {trends}
-RECENTLY USED TOPICS (DO NOT repeat these): {recent_topics}
+FRESH CAR NEWS: {car_news}
+TRENDING SEARCHES: {trends}
+RECENTLY USED TOPICS — DO NOT repeat similar themes: {recent_topics}
 
-PICK THE SINGLE BEST topic for today. Ask yourself:
-1. Will an Indian car buyer aged 25-45 stop scrolling for this?
-2. Does it have a specific number, date, or reveal that feels fresh?
-3. Is there a surprising angle or contrast? ("Cheaper than a Swift" "Better than Nexon EV")
-4. Can we make an OPINION video — not just reporting facts?
+MANDATORY CATEGORY ROTATION — pick the category most underrepresented in recent topics:
+A) LAUNCH NEWS — brand new model reveal, price announcement, booking open
+B) REAL BUYER ADVICE — which variant to buy, should you wait, honest pick
+C) COMPARISON — two specific cars head to head with a clear winner
+D) SURPRISING FACT — something most people get wrong about a popular car
+E) MARKET TREND — sales data with an interesting story behind the numbers
+F) EV REALITY — real-world range, charging, cost vs petrol, honest verdict
 
-GREAT TOPIC EXAMPLES:
-- "Tata Curvv EV real-world range test — 300 km claim vs reality"
-- "Why I'd pick XUV700 over Harrier in 2026 — honest comparison"
-- "Upcoming cars that could kill the Swift dominance"
-- "Mahindra just fixed the top complaint about Scorpio-N"
-- "India's cheapest EV just got cheaper — Toro EV price drop explained"
+CURIOSITY HOOK RULES (pick one that makes someone stop scrolling):
+- A shocking number: "₹4 lakh cheaper", "40% more range", "outsells Creta by 2x"  
+- A contrarian take: "Why I'd AVOID the top variant", "This car is NOT what the ads show"
+- A hidden fact: "The one thing Maruti doesn't tell you about the Swift", "Why dealers prefer this model"
+- An urgent decision: "Buy before June 30 or lose ₹50,000 — here's why"
 
-BAD TOPICS (too vague, avoid):
-- "Top 10 best cars in India" (listicle, no hook)
-- "Everything about Indian EVs" (too broad)
-- "Car review" (no specific car or angle)
+TOPIC MUST be hyper-specific. NOT "Tata EV review" but "Tata Curvv EV: Why the ₹17.49L base is the only smart choice"
 
-Return ONLY valid JSON, no markdown:
+Return ONLY valid JSON:
 {{
-  "topic": "<specific, interesting, opinionated topic>",
+  "topic": "<specific, curiosity-driving topic with a number or surprising angle>",
   "format": "<news|launch|comparison|explainer|ev|suv>",
-  "pexels_keyword": "<one of: car, suv, electric car, highway india, concept car>",
-  "hook_angle": "<the single most surprising or compelling fact about this topic>",
-  "reason": "<one sentence: why this topic is interesting TODAY>"
+  "category": "<A|B|C|D|E|F>",
+  "pexels_keyword": "<car|suv|electric car|highway india|concept car>",
+  "hook_angle": "<the single most surprising fact that will make someone click>",
+  "reason": "<one sentence: what makes this different from yesterday's content>"
 }}
 """
+
 
 SCRIPT_PROMPT = """You are a sharp, witty Indian car journalist who runs "Tech Meets Travel" on YouTube.
 Think: the guy your friends call before buying a car. Knowledgeable, opinionated, fun.
@@ -298,6 +298,10 @@ HARD RULES:
 5. Never say "I" more than 8 times — talk about THEM (the viewer) and the CAR
 6. End every Beat with a micro-hook that pulls into the next beat
 7. NO [BEAT 1] labels — just write the speech straight through
+8. NEVER start with the car brand name. Start with the IMPACT or SURPRISE.
+   BAD: "Tata has launched..." GOOD: "₹3 lakhs less than everyone expected — Tata just made a big move."
+9. ONE surprising/counterintuitive fact per video. Something viewer cannot get from just reading a headline.
+10. The LAST sentence must be a question that triggers comments: "Tata or Mahindra — drop your pick below."
 """
 
 SUBTITLE_PROMPT = """You are a professional subtitle editor.
