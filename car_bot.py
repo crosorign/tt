@@ -122,15 +122,55 @@ BGM_PROFILES = {
 }
 
 PEXELS_QUERIES = {
-    "car":        ["luxury car front view", "sports car driving", "car on road india"],
-    "suv":        ["suv offroad driving", "large suv india", "suv mountain road"],
-    "ev":         ["electric car charging", "ev car future", "tesla electric vehicle"],
-    "launch":     ["car showroom india", "new car display", "car launch event"],
-    "concept":    ["concept car design", "futuristic car prototype", "car show geneva"],
-    "comparison": ["two cars side by side", "car comparison", "different car models"],
-    "interior":   ["car interior dashboard", "luxury car seats", "car infotainment"],
-    "engine":     ["car engine bay", "engine performance", "hybrid engine"],
-    "default":    ["car driving highway", "modern car front", "car sunsets"],
+    "car": [
+        "modern car driving india highway",
+        "luxury car showroom india",
+        "car headlights night driving",
+        "suv mountain road india",
+        "car interior dashboard modern",
+        "automotive design studio",
+        "car engine mechanical",
+        "busy indian city traffic cars",
+    ],
+    "suv": [
+        "suv off road adventure",
+        "large suv india highway",
+        "suv mountain terrain",
+        "suv interior premium",
+        "4x4 vehicle muddy terrain",
+        "suv family travel",
+    ],
+    "electric car": [
+        "electric car charging station",
+        "ev charging india",
+        "electric vehicle futuristic",
+        "ev battery technology",
+        "electric car interior minimalist",
+        "sustainable transport city",
+        "electric car highway driving",
+    ],
+    "highway india": [
+        "highway india expressway",
+        "national highway india cars",
+        "expressway cars speed",
+        "india road trip cars",
+        "golden quadrilateral highway",
+    ],
+    "concept car": [
+        "futuristic concept car design",
+        "auto expo india cars",
+        "car design sketch studio",
+        "prototype vehicle reveal",
+        "automotive future design",
+        "concept vehicle showroom",
+    ],
+    "default": [
+        "modern car driving",
+        "automotive technology",
+        "car showroom premium",
+        "road trip vehicle india",
+        "car headlights dark road",
+    ],
 }
 
 EVERGREEN_TOPICS = [
@@ -160,40 +200,44 @@ CONTENT_FORMAT_TYPES = [
     "suv",
 ]
 
-DAILY_TOPIC_PROMPT = """You are a content strategist for "Tech Meets Travel" — an Indian car news YouTube channel.
-
-YOUR AUDIENCE: Indian car enthusiasts aged 22-45, interested in upcoming launches, EV news, SUV reviews, concept cars, and automotive technology. They want quick, accurate, engaging car news.
+DAILY_TOPIC_PROMPT = """You are a content strategist for "Tech Meets Travel" — India's sharpest car news YouTube channel.
 
 TODAY: {date} | {day}
-CAR NEWS (raw RSS feeds): {car_news}
-TRENDING SEARCHES: {trends}
-RECENTLY USED TOPICS (DO NOT repeat): {recent_topics}
+FRESH CAR NEWS (from Indian automotive sites): {car_news}
+TRENDING SEARCHES IN INDIA: {trends}
+RECENTLY USED TOPICS (DO NOT repeat these): {recent_topics}
 
-STEP 1 — Topic quality check:
-Ask: "Is this the most interesting car story for an Indian viewer today?"
-Pick the most newsworthy or highest-interest topic.
+PICK THE SINGLE BEST topic for today. Ask yourself:
+1. Will an Indian car buyer aged 25-45 stop scrolling for this?
+2. Does it have a specific number, date, or reveal that feels fresh?
+3. Is there a surprising angle or contrast? ("Cheaper than a Swift" "Better than Nexon EV")
+4. Can we make an OPINION video — not just reporting facts?
 
-STEP 2 — Format selection:
-- news: breaking car news, launch dates, price announcements
-- launch: new car launch details, variants, features
-- comparison: compare two cars side by side
-- explainer: how something works (ADAS, hybrid tech, etc.)
-- ev: electric vehicle specific content
-- suv: SUV specific content
+GREAT TOPIC EXAMPLES:
+- "Tata Curvv EV real-world range test — 300 km claim vs reality"
+- "Why I'd pick XUV700 over Harrier in 2026 — honest comparison"
+- "Upcoming cars that could kill the Swift dominance"
+- "Mahindra just fixed the top complaint about Scorpio-N"
+- "India's cheapest EV just got cheaper — Toro EV price drop explained"
 
-STEP 3 — Uniqueness check:
-The recently used topics above must NOT be repeated.
+BAD TOPICS (too vague, avoid):
+- "Top 10 best cars in India" (listicle, no hook)
+- "Everything about Indian EVs" (too broad)
+- "Car review" (no specific car or angle)
 
-Return ONLY valid JSON, nothing else:
+Return ONLY valid JSON, no markdown:
 {{
-  "topic": "<Clickable English topic — specific, exciting, news-driven>",
-  "format": "<news/launch/comparison/explainer/ev/suv>",
-  "pexels_keyword": "<car/suv/ev/launch/concept/comparison/interior/engine>",
-  "hook_angle": "<First 5 seconds — the hook that grabs attention>",
-  "reason": "<Why this topic today>"
-}}"""
+  "topic": "<specific, interesting, opinionated topic>",
+  "format": "<news|launch|comparison|explainer|ev|suv>",
+  "pexels_keyword": "<one of: car, suv, electric car, highway india, concept car>",
+  "hook_angle": "<the single most surprising or compelling fact about this topic>",
+  "reason": "<one sentence: why this topic is interesting TODAY>"
+}}
+"""
 
-SCRIPT_PROMPT = """You are a professional YouTube scriptwriter for "Tech Meets Travel" — an Indian car news channel.
+SCRIPT_PROMPT = """You are a sharp, witty Indian car journalist who runs "Tech Meets Travel" on YouTube.
+Think: the guy your friends call before buying a car. Knowledgeable, opinionated, fun.
+NOT a robot reading specs. A real person who loves cars and talks like it.
 
 Topic: {topic}
 Format: {format_type}
@@ -201,62 +245,59 @@ Hook: {hook_angle}
 Voice: {voice_gender}
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━
-SCRIPT STRUCTURE (follow exactly — 4 beats for a 2-minute video):
+PERSONALITY (this is what makes people subscribe):
+- Talk like you're WhatsApp-voicing your car-obsessed friend
+- Use natural Indian English: "yaar", "basically", "trust me", "here's the thing"
+- Have opinions: "This is actually good value" or "Honestly? I'd wait for the next variant"
+- React to the news: "And wait, it gets better..." or "But here's the catch..."
+- Use comparisons Indians understand: "cheaper than a base Creta", "same range as Nexon EV"
 
-BEAT 1 — HOOK (15 seconds)
-Jump straight into the most exciting fact or question.
-Example good hook: "Tata is about to launch the car that could change the Indian EV market forever."
-DO NOT introduce yourself. Start with the news.
+VIDEO STRUCTURE (2 minutes, 4 beats):
 
-BEAT 2 — CORE INFORMATION (60 seconds)
-Deliver complete, accurate information with specific details:
-- Actual numbers: prices, range, horsepower, torque, battery size
-- Launch dates, variant details, key features
-- Comparisons where relevant
-- No filler, no fluff
+BEAT 1 — OPEN WITH THE MONEY SHOT (15 seconds)
+Start with the single most interesting fact. No intro, no "today we", no "hi guys".
+Hit them immediately with what matters most.
+Examples:
+  "Tata just dropped the Harrier EV price — and it's ₹3 lakhs less than everyone predicted."
+  "Mahindra Scorpio-N gets a mid-life update and honestly? They fixed the one thing everyone complained about."
+  "Real world range of the Nexon EV: we drove it 247 km on one charge. Here's what happened."
 
-BEAT 3 — PRACTICAL ANALYSIS (25 seconds)
-What does this mean for the Indian buyer?
-Should they wait for this launch? Is it worth the price?
-Give a clear, opinionated take.
+BEAT 2 — THE FULL STORY (60 seconds)
+Give everything they came for. Specific, real numbers. No vague "powerful engine" — say "170 bhp and 380 Nm".
+Cover: price (variant-wise if possible), key specs, what's new, launch date, how to book.
+Slip in one comparison: "For context, the base XUV700 starts at ₹13.99 lakh — this undercuts it by ₹80k."
+End Beat 2 with a teaser: "But there's one more thing Tata announced — and I think it changes everything."
 
-BEAT 4 — CTA (10 seconds)
-Natural close. Ask viewers to subscribe for more car news.
-DO NOT sound desperate. "If you found this useful, consider subscribing."
+BEAT 3 — YOUR HONEST TAKE (25 seconds)  
+This is why people watch YOU instead of reading CarDekho.
+Should they buy it? Should they wait? Which variant? Why?
+Be specific: "The mid variant at ₹18.5 lakh is the sweet spot — avoid the top spec unless you really need the panoramic roof."
+Or: "Honestly I'd wait 6 months for the first batch quality issues to get sorted."
+
+BEAT 4 — CLOSE NATURALLY (10 seconds)
+Don't beg. Ask a real question that makes them comment.
+"Which would you pick — Harrier EV or MG ZS EV? Drop it in the comments."
+OR: "If you want the full spec breakdown video — comment 'specs' below and I'll make it."
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━
+FORMAT-SPECIFIC TONE:
 
-FORMAT TONE:
-- news:     confident, fast-paced — "Here's what just happened"
-- launch:   excited, detailed — "Here's everything you need to know"
-- comparison: balanced, data-driven — "Here's how they stack up"
-- explainer: clear, educational — "Here's how it works"
-- ev:        forward-looking, tech-focused — "The future is electric"
-- suv:       bold, adventurous — "Built for the wild"
+news:       Urgent, direct. Lead with the breaking detail. "This just happened — here's what it means for you."
+launch:     Excited but grounded. Cover specs AND real-world usability.
+comparison: Pick a winner. Don't sit on the fence — "Look, if it were my money, I'm going Mahindra."
+explainer:  Patient but never boring. Use analogies. "Think of regenerative braking like a bicycle dynamo but for your battery."
+ev:         Enthusiastic about tech, realistic about range anxiety. Address India-specific EV concerns.
+suv:        Bold. Talk about road presence, ground clearance, off-road capability for Indian roads.
 
-CRITICAL RULES:
-1. {target_min_words}-{target_max_words} words exactly (for ~2 min at natural pace)
-2. Conversational English — how you'd explain to a friend
-3. Use real numbers — actual prices, specs, dates
-4. No markdown, no headers, no bullets — pure flowing speech
-5. Every sentence must earn its place — no filler
-6. Information must be complete — viewer shouldn't need to search elsewhere
-
-YOUTUBE RETENTION RULES:
-1. HOOK (0-10s): Lead with the most exciting spec or controversy.
-   Bad: "Today we're talking about the new Tata car..."
-   Good: "Tata just confirmed the price — and it's ₹3 lakhs cheaper than expected."
-
-2. PATTERN INTERRUPT every 25s: "But here's what nobody is telling you..."
-
-3. COMPARISON ANCHOR: Always compare to what viewers know.
-   "That's the same price as a fully loaded Swift" — makes numbers real.
-
-4. BUILD SUSPENSE: Don't give the conclusion in Beat 1.
-   "I'll tell you the exact launch date at the end — but first..."
-
-5. CALL TO ACTION: "Drop a comment — Tata or Mahindra?" 
-   Forces 2-option comment = massive engagement signal to algorithm.
+━━━━━━━━━━━━━━━━━━━━━━━━━
+HARD RULES:
+1. {target_min_words}-{target_max_words} words (2-min video at natural pace)
+2. ZERO markdown — no asterisks, no headers, no bullets — pure speech
+3. ZERO filler: "In this video", "As I mentioned", "Without further ado" = instantly cut
+4. Real numbers every time — never "affordable" without the actual price
+5. Never say "I" more than 8 times — talk about THEM (the viewer) and the CAR
+6. End every Beat with a micro-hook that pulls into the next beat
+7. NO [BEAT 1] labels — just write the speech straight through
 """
 
 SUBTITLE_PROMPT = """You are a professional subtitle editor.
@@ -279,55 +320,36 @@ Topic: {topic}
 Format: {format_type}
 Hook: {hook_angle}
 
-Return ONLY valid JSON, no markdown:
+Return ONLY valid JSON:
 {{
-  "title": "<SEO-optimized title — see rules below>",
-  "description": "<Full description — see rules below>",
-  "tags": "<25 comma-separated tags — see rules below>",
-  "pinned_comment": "<Engaging pinned comment>",
-  "thumbnail_concept": "<Thumbnail description>"
+  "title": "<title>",
+  "description": "<description>",
+  "tags": "<tags>",
+  "pinned_comment": "<comment>",
+  "thumbnail_concept": "<concept>"
 }}
 
-TITLE RULES:
+TITLE (most important — decides if people click):
 - Under 60 characters
-- Format: [Exciting hook or question] | Tech Meets Travel
-- Include the most-searched keyword naturally
-- Use numbers when possible
+- Include specific number, price, or comparison if possible
+- Pattern: [Surprising fact or question] — NOT "[Brand] [Model] Review"
+- Good: "Tata Harrier EV: ₹3 Lakh Cheaper Than Expected"
+- Good: "Why I'd Skip the Nexon EV in 2026"  
+- Good: "Mahindra XUV700 vs Tata Harrier: Honest Pick"
+- Bad: "Tata Harrier EV Full Review | Tech Meets Travel"
+- DO NOT add "| Tech Meets Travel" — wastes characters
 
-DESCRIPTION RULES:
-Line 1: Hook that matches the video's first 5 seconds
-Line 2: "In this video, we cover [topic summary] | Indian Car News"
-Then:
-- 3-5 key points viewers will learn
-- "Subscribe to Tech Meets Travel for daily car news updates"
-- Hashtags: #TechMeetsTravel #IndianCars #[brand] #[topic keyword]
-
-TAGS RULES:
-- indian cars, car news india, upcoming cars, new car launches, [brand] india, ev cars india
-- Mix of high-volume and long-tail tags
+DESCRIPTION (first 2 lines = Google search snippet = MOST IMPORTANT):
+Line 1: The hook — same energy as Beat 1 of the script
+Line 2: "Tech Meets Travel covers daily Indian car news, EVs, SUVs, and launches."
+Then: timestamps, hashtags
 
 PINNED COMMENT:
-- Ask viewers a specific question about the topic
-- End with: Subscribe to Tech Meets Travel for more car news 🔔
+A question that forces a 2-option reply. 
+"Which would you pick — comment below 👇"
+Or: "What's your biggest concern about EVs in India? Comment below 👇"
 
-THUMBNAIL CONCEPT:
-- Background: bold color (red, orange, dark blue) based on format
-- Bold white/yellow text (main hook) — left 60% of image
-- Right 40%: car visual
-- High contrast, readable at 120px
-
-MONETISATION-FOCUSED SEO RULES:
-
-TITLE (car enthusiast CTR):
-- Car name + price/launch year = highest CTR for car content
-- "Tata Harrier EV 2026 — Price Revealed | Launch Date Confirmed"
-- Controversy works: "Why Mahindra XEV 9e is BETTER than Nexon EV"
-
-DESCRIPTION LINE 1: The exact news hook
-DESCRIPTION LINE 2: "Full details on [car name] launch, price, specs | Tech Meets Travel"
-
-TAGS: Car name + variants + year + India + launch
-"tata harrier ev" + "harrier ev price india" + "harrier ev 2026" + "tata ev launch"
+TAGS: Mix of specific (car name, model year) + broad (indian cars, car news india, ev india)
 """
 
 THUMBNAIL_PROMPT = """Create a detailed AI image generation prompt for a YouTube thumbnail.
@@ -807,7 +829,7 @@ def create_video(script_text, english_subtitles, images_input, output_name,
     t0 = time.time()
     try:
         r = run(["edge-tts", "--file", script_file, "--voice", voice_id,
-                 "--rate=-13%", "--pitch=+0Hz", "--write-media", voice_file],
+                 "--rate=-8%", "--pitch=+0Hz", "--write-media", voice_file],
                 timeout=300)
     except subprocess.TimeoutExpired:
         log("❌ TTS timeout"); return None
