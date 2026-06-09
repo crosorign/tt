@@ -1414,6 +1414,116 @@ TT_THUMB_FORMATS = {
     "default":    {"c1":(8,12,25),   "c2":(3,5,18),   "acc":(255,198,0),  "bb":(178,138,0),  "badge":"NEWS"},
 }
 
+def _draw_animated_car(d, cx, cy, scale, accent, style="sedan"):
+    """Draw a dynamic animated-style car silhouette with motion blur effect."""
+    import math
+    s = scale
+
+    # Motion blur lines (speed effect)
+    for i in range(6):
+        oy = (i-3) * int(12*s)
+        alpha = max(20, 80 - abs(i-3)*20)
+        blur_len = int((80 + abs(i-3)*30)*s)
+        d.line([(cx-int(145*s)-blur_len, cy+oy),
+                (cx-int(145*s), cy+oy)],
+               fill=(*accent[:3], alpha), width=max(1, 3-abs(i-3)))
+
+    if style == "suv":
+        # Boxy SUV profile
+        body_pts = [
+            (cx-int(130*s), cy+int(30*s)),
+            (cx-int(132*s), cy-int(5*s)),
+            (cx-int(108*s), cy-int(45*s)),
+            (cx-int(40*s),  cy-int(72*s)),
+            (cx+int(55*s),  cy-int(72*s)),
+            (cx+int(108*s), cy-int(40*s)),
+            (cx+int(130*s), cy-int(5*s)),
+            (cx+int(132*s), cy+int(30*s)),
+        ]
+        roof_pts = [
+            (cx-int(100*s), cy-int(43*s)),
+            (cx-int(36*s),  cy-int(70*s)),
+            (cx+int(52*s),  cy-int(70*s)),
+            (cx+int(100*s), cy-int(38*s)),
+            (cx+int(50*s),  cy-int(12*s)),
+            (cx-int(32*s),  cy-int(12*s)),
+        ]
+    elif style == "ev":
+        # Sleek EV with cab-forward design
+        body_pts = [
+            (cx-int(128*s), cy+int(28*s)),
+            (cx-int(130*s), cy-int(8*s)),
+            (cx-int(88*s),  cy-int(55*s)),
+            (cx-int(15*s),  cy-int(68*s)),
+            (cx+int(55*s),  cy-int(68*s)),
+            (cx+int(115*s), cy-int(32*s)),
+            (cx+int(130*s), cy-int(5*s)),
+            (cx+int(130*s), cy+int(28*s)),
+        ]
+        roof_pts = [
+            (cx-int(80*s),  cy-int(53*s)),
+            (cx-int(12*s),  cy-int(66*s)),
+            (cx+int(52*s),  cy-int(66*s)),
+            (cx+int(108*s), cy-int(30*s)),
+            (cx+int(48*s),  cy-int(10*s)),
+            (cx-int(10*s),  cy-int(10*s)),
+        ]
+    else:
+        # Standard sedan with dynamic roofline
+        body_pts = [
+            (cx-int(120*s), cy+int(25*s)),
+            (cx-int(122*s), cy-int(8*s)),
+            (cx-int(95*s),  cy-int(35*s)),
+            (cx-int(30*s),  cy-int(62*s)),
+            (cx+int(45*s),  cy-int(62*s)),
+            (cx+int(105*s), cy-int(30*s)),
+            (cx+int(122*s), cy-int(8*s)),
+            (cx+int(124*s), cy+int(25*s)),
+        ]
+        roof_pts = [
+            (cx-int(85*s),  cy-int(33*s)),
+            (cx-int(28*s),  cy-int(58*s)),
+            (cx+int(42*s),  cy-int(58*s)),
+            (cx+int(95*s),  cy-int(28*s)),
+            (cx+int(38*s),  cy-int(10*s)),
+            (cx-int(24*s),  cy-int(10*s)),
+        ]
+
+    # Body
+    d.polygon(body_pts, fill=(22,25,38))
+    d.polygon(body_pts, outline=accent, width=2)
+
+    # Windshield/roof glass with tint
+    d.polygon(roof_pts, fill=(18,45,88))
+    d.polygon(roof_pts, outline=(*accent[:3], 120), width=1)
+
+    # Wheels with rim detail
+    for wx, wy in [(cx-int(78*s), cy+int(28*s)), (cx+int(78*s), cy+int(28*s))]:
+        r = int(28*s)
+        # Tire
+        d.ellipse([wx-r, wy-r, wx+r, wy+r], fill=(10,10,14))
+        d.ellipse([wx-r, wy-r, wx+r, wy+r], outline=accent, width=2)
+        # Rim spokes (5-spoke)
+        for angle in range(0, 360, 72):
+            rad = math.radians(angle)
+            x1 = wx + int(math.cos(rad)*r*0.25)
+            y1 = wy + int(math.sin(rad)*r*0.25)
+            x2 = wx + int(math.cos(rad)*r*0.8)
+            y2 = wy + int(math.sin(rad)*r*0.8)
+            d.line([(x1,y1),(x2,y2)], fill=(55,60,75), width=2)
+        d.ellipse([wx-int(r*0.25), wy-int(r*0.25),
+                   wx+int(r*0.25), wy+int(r*0.25)], fill=(40,44,58))
+
+    # Headlight glow
+    hx, hy = cx+int(120*s), cy-int(5*s)
+    for r, alpha in [(22,30),(15,60),(8,120),(4,200)]:
+        d.ellipse([hx-r, hy-r, hx+r, hy+r], fill=(*accent[:3], alpha))
+
+    # Tail light
+    tx, ty = cx-int(118*s), cy-int(5*s)
+    d.ellipse([tx-8, ty-4, tx+8, ty+4], fill=(200,30,30))
+
+
 
 
 def generate_scenes(output_name, format_type, num_scenes=5):
@@ -1564,6 +1674,7 @@ def generate_scenes(output_name, format_type, num_scenes=5):
     return paths
 
 
+
 def _tt_wrap(text, n):
     words = text.split()
     lines, line = [], ""
@@ -1576,10 +1687,12 @@ def _tt_wrap(text, n):
     return lines[:3]
 
 
+
 def _tt_shadow(d, x, y, text, font, fill, shadow=(0,0,0,200)):
     for ox, oy in [(3,3),(-2,-2),(2,-2),(-2,2)]:
         d.text((x+ox,y+oy), text, font=font, fill=shadow)
     d.text((x,y), text, font=font, fill=fill)
+
 
 
 def _tt_font(size, bold=True):
@@ -1591,135 +1704,6 @@ def _tt_font(size, bold=True):
         return ImageFont.load_default()
 
 
-def _draw_animated_car(d, cx, cy, scale, accent, style="sedan"):
-    """Draw a dynamic animated-style car silhouette with motion blur effect."""
-    import math
-    s = scale
-
-    # Motion blur lines (speed effect)
-    for i in range(6):
-        oy = (i-3) * int(12*s)
-        alpha = max(20, 80 - abs(i-3)*20)
-        blur_len = int((80 + abs(i-3)*30)*s)
-        d.line([(cx-int(145*s)-blur_len, cy+oy),
-                (cx-int(145*s), cy+oy)],
-               fill=(*accent[:3], alpha), width=max(1, 3-abs(i-3)))
-
-    if style == "suv":
-        # Boxy SUV profile
-        body_pts = [
-            (cx-int(130*s), cy+int(30*s)),
-            (cx-int(132*s), cy-int(5*s)),
-            (cx-int(108*s), cy-int(45*s)),
-            (cx-int(40*s),  cy-int(72*s)),
-            (cx+int(55*s),  cy-int(72*s)),
-            (cx+int(108*s), cy-int(40*s)),
-            (cx+int(130*s), cy-int(5*s)),
-            (cx+int(132*s), cy+int(30*s)),
-        ]
-        roof_pts = [
-            (cx-int(100*s), cy-int(43*s)),
-            (cx-int(36*s),  cy-int(70*s)),
-            (cx+int(52*s),  cy-int(70*s)),
-            (cx+int(100*s), cy-int(38*s)),
-            (cx+int(50*s),  cy-int(12*s)),
-            (cx-int(32*s),  cy-int(12*s)),
-        ]
-    elif style == "ev":
-        # Sleek EV with cab-forward design
-        body_pts = [
-            (cx-int(128*s), cy+int(28*s)),
-            (cx-int(130*s), cy-int(8*s)),
-            (cx-int(88*s),  cy-int(55*s)),
-            (cx-int(15*s),  cy-int(68*s)),
-            (cx+int(55*s),  cy-int(68*s)),
-            (cx+int(115*s), cy-int(32*s)),
-            (cx+int(130*s), cy-int(5*s)),
-            (cx+int(130*s), cy+int(28*s)),
-        ]
-        roof_pts = [
-            (cx-int(80*s),  cy-int(53*s)),
-            (cx-int(12*s),  cy-int(66*s)),
-            (cx+int(52*s),  cy-int(66*s)),
-            (cx+int(108*s), cy-int(30*s)),
-            (cx+int(48*s),  cy-int(10*s)),
-            (cx-int(10*s),  cy-int(10*s)),
-        ]
-    else:
-        # Standard sedan with dynamic roofline
-        body_pts = [
-            (cx-int(120*s), cy+int(25*s)),
-            (cx-int(122*s), cy-int(8*s)),
-            (cx-int(95*s),  cy-int(35*s)),
-            (cx-int(30*s),  cy-int(62*s)),
-            (cx+int(45*s),  cy-int(62*s)),
-            (cx+int(105*s), cy-int(30*s)),
-            (cx+int(122*s), cy-int(8*s)),
-            (cx+int(124*s), cy+int(25*s)),
-        ]
-        roof_pts = [
-            (cx-int(85*s),  cy-int(33*s)),
-            (cx-int(28*s),  cy-int(58*s)),
-            (cx+int(42*s),  cy-int(58*s)),
-            (cx+int(95*s),  cy-int(28*s)),
-            (cx+int(38*s),  cy-int(10*s)),
-            (cx-int(24*s),  cy-int(10*s)),
-        ]
-
-    # Body
-    d.polygon(body_pts, fill=(22,25,38))
-    d.polygon(body_pts, outline=accent, width=2)
-
-    # Windshield/roof glass with tint
-    d.polygon(roof_pts, fill=(18,45,88))
-    d.polygon(roof_pts, outline=(*accent[:3], 120), width=1)
-
-    # Wheels with rim detail
-    for wx, wy in [(cx-int(78*s), cy+int(28*s)), (cx+int(78*s), cy+int(28*s))]:
-        r = int(28*s)
-        # Tire
-        d.ellipse([wx-r, wy-r, wx+r, wy+r], fill=(10,10,14))
-        d.ellipse([wx-r, wy-r, wx+r, wy+r], outline=accent, width=2)
-        # Rim spokes (5-spoke)
-        for angle in range(0, 360, 72):
-            rad = math.radians(angle)
-            x1 = wx + int(math.cos(rad)*r*0.25)
-            y1 = wy + int(math.sin(rad)*r*0.25)
-            x2 = wx + int(math.cos(rad)*r*0.8)
-            y2 = wy + int(math.sin(rad)*r*0.8)
-            d.line([(x1,y1),(x2,y2)], fill=(55,60,75), width=2)
-        d.ellipse([wx-int(r*0.25), wy-int(r*0.25),
-                   wx+int(r*0.25), wy+int(r*0.25)], fill=(40,44,58))
-
-    # Headlight glow
-    hx, hy = cx+int(120*s), cy-int(5*s)
-    for r, alpha in [(22,30),(15,60),(8,120),(4,200)]:
-        d.ellipse([hx-r, hy-r, hx+r, hy+r], fill=(*accent[:3], alpha))
-
-    # Tail light
-    tx, ty = cx-int(118*s), cy-int(5*s)
-    d.ellipse([tx-8, ty-4, tx+8, ty+4], fill=(200,30,30))
-
-
-
-def _tt_wrap(text, n):
-    words=text.split(); lines,line=[],""
-    for w in words:
-        if len(line+w)<=n: line+=w+" "
-        else:
-            if line: lines.append(line.strip())
-            line=w+" "
-    if line: lines.append(line.strip())
-    return lines[:3]
-
-def _tt_shadow(d,x,y,text,font,fill,shadow=(0,0,0)):
-    for ox,oy in [(3,3),(-2,-2),(2,-2),(-2,2)]: d.text((x+ox,y+oy),text,font=font,fill=shadow)
-    d.text((x,y),text,font=font,fill=fill)
-
-def _tt_font(size,bold=True):
-    from PIL import ImageFont
-    try: return ImageFont.truetype(ENG_BOLD_FONT if bold else ENG_REG_FONT, size)
-    except: return ImageFont.load_default()
 
 def generate_thumbnail(title, format_type, output_name):
     """6 distinct layouts — one per format type."""
@@ -1826,6 +1810,321 @@ def generate_thumbnail(title, format_type, output_name):
         log(f"  ⚠️ Thumbnail: {e}"); return None
 
 
+
+def upload_short_to_youtube(short_path, main_title, main_description, tags_str, youtube):
+    """Upload Short to YouTube with #Shorts tag for Shorts feed discovery."""
+    if not short_path or not os.path.exists(short_path):
+        return None
+    try:
+        # Shorts title: keep under 100 chars, add #Shorts
+        short_title = main_title[:90] + " #Shorts" if len(main_title) <= 90 else main_title[:88] + "… #Shorts"
+
+        # Shorts description: first 2 lines + #Shorts tag
+        short_desc_lines = (main_description or "").split("\n")[:3]
+        short_desc = "\n".join(short_desc_lines) + "\n\n#Shorts"
+
+        # Tags: add Shorts-specific tags
+        tags = [t.strip() for t in tags_str.split(",") if t.strip()][:25]
+        if "Shorts" not in tags: tags.insert(0, "Shorts")
+        if "YouTubeShorts" not in tags: tags.insert(1, "YouTubeShorts")
+
+        body = {
+            "snippet": {
+                "title":       short_title[:100],
+                "description": short_desc[:5000],
+                "tags":        tags[:30],
+                "categoryId":  "22",   # People & Blogs — YouTube classifies Shorts here
+            },
+            "status": {
+                "privacyStatus":           "public",
+                "selfDeclaredMadeForKids": False,
+            },
+        }
+
+        req = youtube.videos().insert(
+            part="snippet,status", body=body,
+            media_body=MediaFileUpload(short_path, chunksize=-1, resumable=True))
+        resp = req.execute()
+        vid = resp["id"]
+        log(f"  ✅ Short uploaded: https://youtu.be/{vid}")
+        return vid
+    except Exception as e:
+        log(f"  ⚠️ Short upload failed: {e}")
+        return None
+
+
+
+# ═══════════════════════════════════════════════════════════════════
+# RESILIENT LLM ROUTER — 5-provider waterfall
+# Priority: Groq (fast) → Gemini (reliable) → GitHub Models (free)
+#           → Cerebras (fast free) → Groq fallback models
+#
+# All providers use OpenAI-compatible SDK for consistency.
+# GitHub Models: uses GITHUB_TOKEN (auto-set in Actions — zero config)
+# Cerebras: uses CEREBRAS_API_KEY secret (optional, add if available)
+# ═══════════════════════════════════════════════════════════════════
+
+GITHUB_TOKEN    = os.environ.get("GITHUB_TOKEN", "")
+CEREBRAS_KEY    = os.environ.get("CEREBRAS_API_KEY", "")
+
+# ── Provider configs ────────────────────────────────────────────────
+PROVIDERS = [
+    # name, base_url, api_key, model, use_for
+    ("groq",     "https://api.groq.com/openai/v1",         GROQ_API_KEY,  "llama-3.3-70b-versatile",        "script"),
+    ("gemini",   None,                                       GEMINI_KEY,    "gemini-2.5-flash",               "all"),
+    ("github",   "https://models.inference.ai.azure.com",  GITHUB_TOKEN,  "gpt-4o-mini",                    "all"),
+    ("cerebras", "https://api.cerebras.ai/v1",              CEREBRAS_KEY,  "llama-3.3-70b",                  "all"),
+    ("groq_fb",  "https://api.groq.com/openai/v1",         GROQ_API_KEY,  "llama3-8b-8192",                 "fallback"),
+]
+
+def _call_provider(name, base_url, api_key, model, prompt, max_tokens=4000):
+    """Call a single provider. Returns text or raises."""
+    if not api_key:
+        raise Exception(f"{name}: no API key")
+
+    if name == "gemini":
+        # Gemini uses its own SDK
+        client = genai.Client(api_key=api_key)
+        resp = client.models.generate_content(
+            model=model, contents=prompt)
+        return resp.text
+    else:
+        # All others: OpenAI-compatible
+        from openai import OpenAI
+        client = OpenAI(base_url=base_url, api_key=api_key)
+        resp = client.chat.completions.create(
+            model=model,
+            messages=[{"role": "user", "content": prompt}],
+            max_tokens=max_tokens,
+            temperature=0.85,
+        )
+        return resp.choices[0].message.content
+
+
+def _is_retryable(err_str):
+    """True if the error is transient (rate limit / server overload)."""
+    return any(c in err_str for c in [
+        "429", "503", "502", "RESOURCE_EXHAUSTED", "UNAVAILABLE",
+        "high demand", "overloaded", "ServiceUnavailable",
+        "rate_limit", "tokens per day", "TPD", "Internal",
+        "timeout", "timed out",
+    ])
+
+
+def call_llm(prompt, max_retries=3, prefer="gemini", max_tokens=4000):
+    """
+    Resilient multi-provider router.
+    Tries each provider in priority order.
+    On transient errors → retry with backoff.
+    On permanent errors → skip to next provider immediately.
+    """
+    # Build provider order based on preference
+    if prefer == "groq":
+        order = ["groq", "gemini", "github", "cerebras", "groq_fb"]
+    else:
+        order = ["gemini", "groq", "github", "cerebras", "groq_fb"]
+
+    provider_map = {p[0]: p for p in PROVIDERS}
+    last_error = ""
+
+    for provider_name in order:
+        if provider_name not in provider_map:
+            continue
+        name, base_url, api_key, model, _ = provider_map[provider_name]
+        if not api_key:
+            continue   # skip providers with no key configured
+
+        for attempt in range(max_retries):
+            try:
+                result = _call_provider(name, base_url, api_key, model, prompt, max_tokens)
+                if result and result.strip():
+                    if attempt > 0 or provider_name != order[0]:
+                        log(f"  ✅ LLM: {name}/{model.split('-')[0]}")
+                    return result.strip()
+            except Exception as e:
+                err = str(e)
+                last_error = err
+                if _is_retryable(err):
+                    # Daily limit hit — skip provider entirely
+                    if "tokens per day" in err or "TPD" in err or "daily" in err.lower():
+                        log(f"  ⚠️ {name}: daily limit — trying next provider")
+                        break
+                    wait = min(10 * (2 ** attempt), 60)
+                    log(f"  ⏳ {name} retry {attempt+1}/{max_retries} in {wait}s ({err[:60]})")
+                    time.sleep(wait)
+                else:
+                    # Non-retryable (auth, invalid model etc) — skip provider
+                    log(f"  ⚠️ {name}: {err[:80]} — skipping")
+                    break
+
+    raise Exception(f"All LLM providers failed. Last: {last_error[:150]}")
+
+
+def call_llm_groq(prompt, max_retries=3):
+    """Script generation — prefers Groq for quality, all providers as fallback."""
+    return call_llm(prompt, max_retries=max_retries, prefer="groq", max_tokens=4000)
+
+
+def call_llm_gemini(prompt, max_retries=3):
+    """Explicit Gemini — but falls back gracefully to other providers."""
+    return call_llm(prompt, max_retries=max_retries, prefer="gemini", max_tokens=2000)
+
+
+# Keep _call_gemini and _call_groq for backward compatibility
+def _call_gemini(prompt, max_retries=5):
+    return call_llm(prompt, max_retries=max_retries, prefer="gemini")
+
+def _call_groq(prompt, max_retries=3):
+    return call_llm(prompt, max_retries=max_retries, prefer="groq")
+
+
+
+UPLOAD_QUEUE_FILE = "upload_queue.json"
+
+
+def is_quota_exceeded(err_str):
+    """Check if error is YouTube quota exceeded."""
+    return any(x in str(err_str).lower() for x in
+               ["quotaexceeded", "quota exceeded", "usageexceeded",
+                "403", "dailylimitexceeded"])
+
+
+def queue_for_retry(video_path, metadata, privacy="public"):
+    """Save failed upload to queue for next run."""
+    try:
+        queue = []
+        if os.path.exists(UPLOAD_QUEUE_FILE):
+            with open(UPLOAD_QUEUE_FILE) as f:
+                queue = json.load(f)
+        queue.append({
+            "video_path": video_path,
+            "metadata":   metadata,
+            "privacy":    privacy,
+            "queued_at":  datetime.datetime.now().isoformat(),
+        })
+        with open(UPLOAD_QUEUE_FILE, "w") as f:
+            json.dump(queue, f, indent=2, ensure_ascii=False)
+        log(f"  📋 Queued for retry: {os.path.basename(video_path)}")
+        # Commit queue to git so it persists
+        try:
+            run(["git", "config", "user.email", "bot@channel.com"])
+            run(["git", "config", "user.name",  "Bot"])
+            run(["git", "add", UPLOAD_QUEUE_FILE])
+            run(["git", "commit", "-m", "chore: queue video for upload retry"])
+            run(["git", "push"])
+        except: pass
+    except Exception as e:
+        log(f"  ⚠️ Queue save failed: {e}")
+
+
+def upload_pending_from_queue():
+    """Upload any videos queued from previous failed runs."""
+    if not os.path.exists(UPLOAD_QUEUE_FILE):
+        return
+    try:
+        with open(UPLOAD_QUEUE_FILE) as f:
+            queue = json.load(f)
+        if not queue:
+            return
+        log(f"📤 Processing upload queue ({len(queue)} pending)...")
+        youtube = get_authenticated_service()
+        if not youtube:
+            return
+        remaining = []
+        for item in queue:
+            path = item.get("video_path", "")
+            if not os.path.exists(path):
+                log(f"  ⚠️ Queued file missing: {path} — skipping")
+                continue
+            try:
+                vid = upload_to_youtube(path, item.get("metadata", {}),
+                                        item.get("privacy", "public"))
+                if vid:
+                    log(f"  ✅ Queued upload succeeded: {vid}")
+                else:
+                    remaining.append(item)
+            except Exception as e:
+                if is_quota_exceeded(e):
+                    log(f"  ⚠️ Still quota exceeded — keeping in queue")
+                    remaining.append(item)
+                else:
+                    log(f"  ⚠️ Queue upload failed: {e}")
+        with open(UPLOAD_QUEUE_FILE, "w") as f:
+            json.dump(remaining, f, indent=2, ensure_ascii=False)
+        if not remaining:
+            try:
+                run(["git", "add", UPLOAD_QUEUE_FILE])
+                run(["git", "commit", "-m", "chore: clear upload queue"])
+                run(["git", "push"])
+            except: pass
+    except Exception as e:
+        log(f"  ⚠️ Queue processing failed: {e}")
+
+
+def upload_to_youtube(video_path, metadata, privacy="public"):
+    if not os.path.exists(video_path):
+        log(f"❌ Video not found: {video_path}"); return None
+
+    youtube = get_authenticated_service()
+    if not youtube:
+        log("⚠️ YouTube auth failed — skipping upload"); return None
+
+    body = {
+        "snippet": {
+            "title":       metadata.get("title", "")[:100],
+            "description": metadata.get("description", "")[:5000],
+            "tags":        [t.strip() for t in
+                           validate_tags(metadata.get("tags","")).split(",")][:25],
+            "categoryId":  "2"   # Autos & Vehicles,
+        },
+        "status": {
+            "privacyStatus":           privacy,
+            "selfDeclaredMadeForKids": False,
+        },
+    }
+
+    try:
+        t0 = time.time()
+        req = youtube.videos().insert(
+            part="snippet,status", body=body,
+            media_body=MediaFileUpload(video_path, chunksize=-1, resumable=True))
+        resp = req.execute()
+        vid = resp["id"]
+        log(f"✅ Uploaded: https://youtu.be/{vid} ({time.time()-t0:.0f}s)")
+
+        if metadata.get("pinned_comment"):
+            try:
+                time.sleep(30)   # avoid rapid-fire spam detection
+                youtube.commentThreads().insert(
+                    part="snippet",
+                    body={"snippet": {"videoId": vid, "topLevelComment": {
+                        "snippet": {"textOriginal": metadata["pinned_comment"]}
+                    }}}).execute()
+                log("  ✅ Pinned comment set")
+            except: pass
+
+        thumb = metadata.get("thumbnail_path", "")
+        if thumb and os.path.exists(thumb):
+            try:
+                youtube.thumbnails().set(
+                    videoId=vid,
+                    media_body=MediaFileUpload(thumb, mimetype="image/png")
+                ).execute()
+                log("  ✅ Custom thumbnail uploaded")
+            except Exception as e:
+                log(f"  ⚠️ Thumbnail upload failed: {e}")
+
+        return vid
+    except Exception as e:
+        err = str(e)
+        if is_quota_exceeded(err):
+            log(f"❌ YouTube quota exceeded — queuing for next run")
+            queue_for_retry(video_path, metadata, privacy)
+        else:
+            log(f"❌ Upload failed: {err[:150]}")
+        return None
+
+
 def safe_process_video(topic=None, format_type=None, upload=False, privacy="public"):
     ensure_dirs()
     t_start = time.time()
@@ -1859,7 +2158,6 @@ def safe_process_video(topic=None, format_type=None, upload=False, privacy="publ
     log("🎨 Generating animated scenes...")
     images = generate_scenes(safe_name, fmt, num_scenes=5)
     if not images:
-        # Fallback to Pexels
         log("📸 Fallback: Fetching Pexels images...")
         images = fetch_pexels_images(pexels_kw, img_dir, count=5)
     if not images:
