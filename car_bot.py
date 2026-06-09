@@ -1414,431 +1414,416 @@ TT_THUMB_FORMATS = {
     "default":    {"c1":(8,12,25),   "c2":(3,5,18),   "acc":(255,198,0),  "bb":(178,138,0),  "badge":"NEWS"},
 }
 
-def generate_thumbnail(title, format_type, output_name):
-    """Generate premium automotive thumbnail — format-specific color palette."""
-    try:
-        from PIL import Image, ImageDraw, ImageFont
-        import math
-        os.makedirs(THUMBNAIL_DIR, exist_ok=True)
 
-        W, H = 1280, 720
-        cfg = TT_THUMB_FORMATS.get(format_type, TT_THUMB_FORMATS["default"])
-        img = Image.new("RGB", (W, H), cfg["c1"])
+
+def generate_scenes(output_name, format_type, num_scenes=5):
+    """Generate animated car scene images. Replaces Pexels — zero copyright, zero cost."""
+    from PIL import Image, ImageDraw
+    import os, math, random, hashlib
+
+    seed = int(hashlib.md5(output_name.encode()).hexdigest()[:8], 16)
+    W, H = 1920, 1080
+    scene_dir = os.path.join(PEXELS_DIR, output_name)
+    os.makedirs(scene_dir, exist_ok=True)
+
+    pool = {
+        "news":       ["night_highway","city_aerial","showroom","dashboard","mountain_road"],
+        "launch":     ["showroom","night_highway","mountain_road","city_aerial","night_highway"],
+        "comparison": ["night_highway","mountain_road","showroom","city_aerial","dashboard"],
+        "ev":         ["ev_charging","night_highway","city_aerial","dashboard","mountain_road"],
+        "suv":        ["mountain_road","night_highway","city_aerial","showroom","night_highway"],
+        "explainer":  ["dashboard","showroom","city_aerial","night_highway","mountain_road"],
+    }
+    scenes = pool.get(format_type, pool["news"])[:num_scenes]
+    acc_map = {
+        "news":(232,0,28),"launch":(0,215,95),"comparison":(50,148,255),
+        "ev":(0,228,198),"suv":(255,138,0),"explainer":(255,178,0),
+    }
+    acc = acc_map.get(format_type, (255,198,0))
+    paths = []
+
+    for idx, scene in enumerate(scenes):
+        out = os.path.join(scene_dir, f"{idx:02d}_{scene}.png")
+        if os.path.exists(out):
+            paths.append(out); continue
+
+        img = Image.new("RGB",(W,H),(5,8,18))
         d   = ImageDraw.Draw(img)
+        rs  = seed + idx * 7919
+        random.seed(rs)
 
-        def load_font(size, bold=True):
-            try: return ImageFont.truetype(ENG_BOLD_FONT if bold else ENG_REG_FONT, size)
-            except: return ImageFont.load_default()
-
-        def bg_grad():
+        if scene == "night_highway":
             for y in range(H):
-                t = y/H
-                col = tuple(int(cfg["c1"][j]+(cfg["c2"][j]-cfg["c1"][j])*t) for j in range(3))
-                d.line([(0,y),(W,y)], fill=col)
+                t=y/H; d.line([(0,y),(W,y)],fill=(int(2+t*10),int(4+t*15),int(12+t*28)))
+            for _ in range(180):
+                x,y=random.randint(0,W),random.randint(0,H//3); b=random.randint(140,255)
+                r2=random.choice([1,1,2]); d.ellipse([x-r2,y-r2,x+r2,y+r2],fill=(b,b,b))
+            vx,vy=W//2,H//2-30
+            d.polygon([(0,H),(W,H),(vx+60,vy),(vx-60,vy)],fill=(18,20,28))
+            for j in range(8):
+                t=j/8; y=int(vy+(H-vy)*t); xw=int(5+t*40)
+                d.line([(W//2-xw//4,y),(W//2+xw//4,y)],fill=(220,200,80),width=max(1,int(t*4)))
+            for cx2,sp in [(W//2-120,.15),(W//2+120,.15)]:
+                for r3 in range(280,0,-10):
+                    t=1-r3/280; a=int(t*20)
+                    d.ellipse([cx2-r3*sp,vy-r3*.08,cx2+r3*sp,vy+r3*.5],fill=(min(255,a*3),min(255,a*3),min(255,a*2)))
+            _draw_animated_car(d,W*3//4,H//2+30,1.3,acc)
 
-        def shadow_text(x, y, text, font, fill):
-            for ox,oy in [(3,3),(-2,-2),(2,-2),(-2,2)]:
-                d.text((x+ox,y+oy), text, font=font, fill=(0,0,0))
-            d.text((x,y), text, font=font, fill=fill)
+        elif scene == "showroom":
+            for y in range(H):
+                t=y/H; d.line([(0,y),(W,y)],fill=(int(5+t*12),int(5+t*10),int(10+t*20)))
+            cx2,cy2=W//2+100,H*3//5
+            for r3 in range(500,0,-8):
+                t=1-r3/500; c=(0,min(255,int(t*60)),min(255,int(t*40)))
+                d.ellipse([cx2-r3,cy2-r3,cx2+r3,cy2+r3],outline=c,width=1)
+            ped_y=H*2//3
+            d.ellipse([W//2-260,ped_y-18,W//2+260,ped_y+38],fill=(18,20,32))
+            d.ellipse([W//2-260,ped_y-20,W//2+260,ped_y],fill=(30,33,50))
+            _draw_animated_car(d,W//2,ped_y-90,2.0,acc)
 
-        def wrap_title(text, n=18):
-            words = text.split()
-            lines, line = [], ""
-            for w in words:
-                if len(line+w)<=n: line+=w+" "
-                else:
-                    if line: lines.append(line.strip())
-                    line=w+" "
-            if line: lines.append(line.strip())
-            return lines[:3]
+        elif scene == "city_aerial":
+            for y in range(H//3):
+                t=y/(H//3); d.line([(0,y),(W,y)],fill=(int(5+t*20),int(8+t*30),int(18+t*55)))
+            for _ in range(55):
+                bx=random.randint(0,W-100); by=random.randint(H//4,H-80)
+                bw=random.randint(40,120); bh=random.randint(30,100); br=random.randint(18,45)
+                d.rectangle([bx,by,bx+bw,by+bh],fill=(br,br+5,br+10))
+                for wy2 in range(by+5,by+bh-5,8):
+                    for wx2 in range(bx+5,bx+bw-5,10):
+                        if random.random()>.5:
+                            d.rectangle([wx2,wy2,wx2+5,wy2+4],
+                                         fill=(random.randint(180,255),random.randint(160,240),random.randint(80,160)))
+            d.line([(0,H*2//3),(W,H//3)],fill=(28,30,42),width=110)
+            for j in range(10):
+                t=j/10; cx3=int(t*W); cy3=int(H*2//3-t*(H*2//3-H//3))
+                d.ellipse([cx3-5,cy3-3,cx3+5,cy3+3],fill=(255,240,180) if j%3!=0 else (220,30,30))
 
-        bg_grad()
+        elif scene == "dashboard":
+            for y in range(H):
+                t=y/H; d.line([(0,y),(W,y)],fill=(int(3+t*12),int(3+t*10),int(8+t*20)))
+            vp=(W//2,H//3)
+            d.polygon([(W//4,H*2//3),(W*3//4,H*2//3),(vp[0]+35,vp[1]),(vp[0]-35,vp[1])],fill=(15,16,22))
+            d.polygon([(0,0),(W//5,0),(W//4+50,H*2//3),(0,H*2//3)],fill=(10,10,16))
+            d.polygon([(W,0),(W*4//5,0),(W*3//4-50,H*2//3),(W,H*2//3)],fill=(10,10,16))
+            for y in range(H*2//3,H):
+                t=(y-H*2//3)/(H-H*2//3); d.line([(0,y),(W,y)],fill=(int(10+t*5),int(10+t*5),int(15+t*8)))
+            sw_cx,sw_cy,sw_r=W//2,H-130,130
+            d.ellipse([sw_cx-sw_r,sw_cy-sw_r,sw_cx+sw_r,sw_cy+sw_r],outline=(40,42,55),width=16)
+            d.ellipse([sw_cx-sw_r,sw_cy-sw_r,sw_cx+sw_r,sw_cy+sw_r],outline=(60,65,80),width=4)
+            for angle in [90,210,330]:
+                rad=math.radians(angle)
+                d.line([(sw_cx+int(math.cos(rad)*25),sw_cy+int(math.sin(rad)*25)),
+                        (sw_cx+int(math.cos(rad)*sw_r*.87),sw_cy+int(math.sin(rad)*sw_r*.87))],fill=(45,48,62),width=18)
+            d.ellipse([sw_cx-26,sw_cy-26,sw_cx+26,sw_cy+26],fill=(25,28,38))
 
-        # Diagonal accent panel (right 35%)
-        px = int(W*0.63)
-        for x in range(px,W):
-            t = (x-px)/(W-px)
-            col = tuple(max(0,int(c*(1-t*0.4))) for c in cfg["c2"])
-            d.line([(x,0),(x,H)],fill=col)
-        d.polygon([(px-35,0),(px+35,0),(px-35,H),(px-90,H)], fill=cfg["c2"])
+        elif scene == "mountain_road":
+            sky=[(8,10,25),(25,15,40),(60,20,50),(120,35,30),(200,80,20),(240,140,30),(255,200,60)]
+            zh=H//2//len(sky)
+            for j,col in enumerate(sky):
+                y1=j*zh; nc=sky[min(j+1,len(sky)-1)]
+                for y in range(y1,y1+zh+5):
+                    t=max(0,min(1,(y-y1)/max(zh,1)))
+                    d.line([(0,y),(W,y)],fill=tuple(int(col[k]+(nc[k]-col[k])*t) for k in range(3)))
+            sx2,sy2=W*2//3,H//3
+            for r3 in range(110,0,-4):
+                t=1-r3/110; d.ellipse([sx2-r3,sy2-r3,sx2+r3,sy2+r3],fill=(255,int(160+t*95),int(t*80)))
+            for layer,(y_base,dark) in enumerate([(H*2//3,8),(H*3//5,15),(H//2+30,25)]):
+                pts2=[(0,H)]
+                x2=0
+                while x2<W:
+                    pk=random.randint(60,180)*(layer+1)//2; pts2.append((x2,y_base-pk)); x2+=random.randint(60,150)
+                pts2.append((W,H)); d.polygon(pts2,fill=(dark,dark+3,dark+8))
+            d.polygon([(W//2-75,H//2+20),(W//2+75,H//2+20),(W*3//4,H),(W//4,H)],fill=(20,20,28))
+            _draw_animated_car(d,W//2,H*3//4-20,.65,acc)
 
-        # Grid lines (tech aesthetic)
-        for x in range(0,W,90):
-            d.line([(x,0),(x,H)], fill=(*cfg["c2"],), width=1)
-        for y in range(0,H,90):
-            d.line([(0,y),(W,y)], fill=(*cfg["c2"],), width=1)
+        else:  # ev_charging
+            for y in range(H):
+                t=y/H; d.line([(0,y),(W,y)],fill=(int(t*5),int(8+t*15),int(15+t*25)))
+            for sx in [W//3,W*2//3]:
+                d.rectangle([sx-25,H//4,sx+25,H*3//4],fill=(8,20,30))
+                d.rectangle([sx-25,H//4,sx+25,H*3//4],outline=(0,150,140),width=2)
+                d.rectangle([sx-18,H//4+20,sx+18,H//4+100],fill=(0,30,45))
+                for r3 in [26,20,14,8]:
+                    t=1-r3/28; col=(0,int(180+t*75),int(150+t*50))
+                    x0,y0,x1,y1=sx-r3+5,H//4+35,sx+r3-5,H//4+95
+                    if x1>x0 and y1>y0: d.arc([x0,y0,x1,y1],150,int(150+t*240),fill=col,width=2)
+            cx3,cy3=W//2,H*3//4-40; s3=1.8
+            ebody=[(cx3-int(128*s3),cy3+int(28*s3)),(cx3-int(130*s3),cy3-int(8*s3)),
+                   (cx3-int(88*s3),cy3-int(55*s3)),(cx3-int(15*s3),cy3-int(68*s3)),
+                   (cx3+int(55*s3),cy3-int(68*s3)),(cx3+int(115*s3),cy3-int(32*s3)),
+                   (cx3+int(130*s3),cy3-int(5*s3)),(cx3+int(130*s3),cy3+int(28*s3))]
+            d.polygon(ebody,fill=(5,20,35)); d.polygon(ebody,outline=(0,180,160),width=3)
+            for r3 in range(180,0,-18):
+                t=1-r3/180; a=int(t*6); bb=[cx3-r3,cy3-r3//2,cx3+r3,cy3+r3//2]
+                if bb[2]>bb[0] and bb[3]>bb[1]: d.ellipse(bb,outline=(0,min(255,a*25),min(255,a*18)),width=1)
 
-        # Car silhouette (right panel)
-        car_cx, car_cy = px+(W-px)//2, H//2+20
-        s = 1.6
-        body = [
-            (car_cx-int(118*s),car_cy+int(22*s)), (car_cx-int(120*s),car_cy-int(7*s)),
-            (car_cx-int(92*s), car_cy-int(32*s)), (car_cx-int(28*s), car_cy-int(58*s)),
-            (car_cx+int(42*s), car_cy-int(58*s)), (car_cx+int(102*s),car_cy-int(28*s)),
-            (car_cx+int(120*s),car_cy-int(7*s)),  (car_cx+int(122*s),car_cy+int(22*s)),
-        ]
-        d.polygon(body, fill=(32,35,50))
-        d.polygon(body, outline=cfg["acc"], width=2)
-        wind = [
-            (car_cx-int(82*s),car_cy-int(30*s)), (car_cx-int(25*s),car_cy-int(54*s)),
-            (car_cx+int(38*s),car_cy-int(54*s)), (car_cx+int(92*s),car_cy-int(26*s)),
-            (car_cx+int(36*s),car_cy-int(12*s)), (car_cx-int(22*s),car_cy-int(12*s)),
-        ]
-        d.polygon(wind, fill=(22,52,98))
-        for wx,wy in [(car_cx-int(72*s),car_cy+int(28*s)),(car_cx+int(72*s),car_cy+int(28*s))]:
-            r = int(25*s)
-            d.ellipse([wx-r,wy-r,wx+r,wy+r], fill=(12,12,18))
-            d.ellipse([wx-r+3,wy-r+3,wx+r-3,wy+r-3], outline=cfg["acc"], width=2)
-            d.ellipse([wx-7,wy-7,wx+7,wy+7], fill=(45,48,58))
-        d.ellipse([car_cx+int(116*s)-5,car_cy-int(4*s)-3,
-                   car_cx+int(116*s)+5,car_cy-int(4*s)+3], fill=(255,238,178))
-
-        # Borders
-        d.rectangle([0,0,W,10], fill=cfg["acc"])
-        d.rectangle([0,H-10,W,H], fill=cfg["acc"])
-
-        # Format badge
-        badge = cfg["badge"]
-        bw = len(badge)*16+42
-        bfont = load_font(22)
-        d.rounded_rectangle([W-bw-18,16,W-18,62], radius=8, fill=cfg["bb"])
-        d.text((W-bw//2-18,39), badge, font=bfont, fill=(255,255,255), anchor="mm")
-
-        # Channel handle
-        hfont = load_font(20, bold=False)
-        d.text((28,H-38), "@tech_meets_travel", font=hfont, fill=(158,162,178))
-
-        # Title text
-        lines = wrap_title(title, 17)
-        ty = 105
-        for i,line in enumerate(lines):
-            font = load_font(82 if i==0 else 56)
-            col  = (255,255,255) if i==0 else (198,202,218)
-            shadow_text(28, ty, line, font, col)
-            ty += (92 if i==0 else 64)
-
-        d.rectangle([28,ty+5,min(28+420,px-15),ty+11], fill=cfg["acc"])
-
-        out = f"{THUMBNAIL_DIR}/{output_name}_thumb.png"
         img.save(out)
-        log(f"  ✅ Thumbnail: {out}")
+        paths.append(out)
+        log(f"  🎨 Scene {idx+1}/{len(scenes)}: {scene}")
+
+    return paths
+
+
+def _tt_wrap(text, n):
+    words = text.split()
+    lines, line = [], ""
+    for w in words:
+        if len(line+w) <= n: line += w+" "
+        else:
+            if line: lines.append(line.strip())
+            line = w+" "
+    if line: lines.append(line.strip())
+    return lines[:3]
+
+
+def _tt_shadow(d, x, y, text, font, fill, shadow=(0,0,0,200)):
+    for ox, oy in [(3,3),(-2,-2),(2,-2),(-2,2)]:
+        d.text((x+ox,y+oy), text, font=font, fill=shadow)
+    d.text((x,y), text, font=font, fill=fill)
+
+
+def _tt_font(size, bold=True):
+    from PIL import ImageFont
+    try:
+        path = ENG_BOLD_FONT if bold else ENG_REG_FONT
+        return ImageFont.truetype(path, size)
+    except:
+        return ImageFont.load_default()
+
+
+def _draw_animated_car(d, cx, cy, scale, accent, style="sedan"):
+    """Draw a dynamic animated-style car silhouette with motion blur effect."""
+    import math
+    s = scale
+
+    # Motion blur lines (speed effect)
+    for i in range(6):
+        oy = (i-3) * int(12*s)
+        alpha = max(20, 80 - abs(i-3)*20)
+        blur_len = int((80 + abs(i-3)*30)*s)
+        d.line([(cx-int(145*s)-blur_len, cy+oy),
+                (cx-int(145*s), cy+oy)],
+               fill=(*accent[:3], alpha), width=max(1, 3-abs(i-3)))
+
+    if style == "suv":
+        # Boxy SUV profile
+        body_pts = [
+            (cx-int(130*s), cy+int(30*s)),
+            (cx-int(132*s), cy-int(5*s)),
+            (cx-int(108*s), cy-int(45*s)),
+            (cx-int(40*s),  cy-int(72*s)),
+            (cx+int(55*s),  cy-int(72*s)),
+            (cx+int(108*s), cy-int(40*s)),
+            (cx+int(130*s), cy-int(5*s)),
+            (cx+int(132*s), cy+int(30*s)),
+        ]
+        roof_pts = [
+            (cx-int(100*s), cy-int(43*s)),
+            (cx-int(36*s),  cy-int(70*s)),
+            (cx+int(52*s),  cy-int(70*s)),
+            (cx+int(100*s), cy-int(38*s)),
+            (cx+int(50*s),  cy-int(12*s)),
+            (cx-int(32*s),  cy-int(12*s)),
+        ]
+    elif style == "ev":
+        # Sleek EV with cab-forward design
+        body_pts = [
+            (cx-int(128*s), cy+int(28*s)),
+            (cx-int(130*s), cy-int(8*s)),
+            (cx-int(88*s),  cy-int(55*s)),
+            (cx-int(15*s),  cy-int(68*s)),
+            (cx+int(55*s),  cy-int(68*s)),
+            (cx+int(115*s), cy-int(32*s)),
+            (cx+int(130*s), cy-int(5*s)),
+            (cx+int(130*s), cy+int(28*s)),
+        ]
+        roof_pts = [
+            (cx-int(80*s),  cy-int(53*s)),
+            (cx-int(12*s),  cy-int(66*s)),
+            (cx+int(52*s),  cy-int(66*s)),
+            (cx+int(108*s), cy-int(30*s)),
+            (cx+int(48*s),  cy-int(10*s)),
+            (cx-int(10*s),  cy-int(10*s)),
+        ]
+    else:
+        # Standard sedan with dynamic roofline
+        body_pts = [
+            (cx-int(120*s), cy+int(25*s)),
+            (cx-int(122*s), cy-int(8*s)),
+            (cx-int(95*s),  cy-int(35*s)),
+            (cx-int(30*s),  cy-int(62*s)),
+            (cx+int(45*s),  cy-int(62*s)),
+            (cx+int(105*s), cy-int(30*s)),
+            (cx+int(122*s), cy-int(8*s)),
+            (cx+int(124*s), cy+int(25*s)),
+        ]
+        roof_pts = [
+            (cx-int(85*s),  cy-int(33*s)),
+            (cx-int(28*s),  cy-int(58*s)),
+            (cx+int(42*s),  cy-int(58*s)),
+            (cx+int(95*s),  cy-int(28*s)),
+            (cx+int(38*s),  cy-int(10*s)),
+            (cx-int(24*s),  cy-int(10*s)),
+        ]
+
+    # Body
+    d.polygon(body_pts, fill=(22,25,38))
+    d.polygon(body_pts, outline=accent, width=2)
+
+    # Windshield/roof glass with tint
+    d.polygon(roof_pts, fill=(18,45,88))
+    d.polygon(roof_pts, outline=(*accent[:3], 120), width=1)
+
+    # Wheels with rim detail
+    for wx, wy in [(cx-int(78*s), cy+int(28*s)), (cx+int(78*s), cy+int(28*s))]:
+        r = int(28*s)
+        # Tire
+        d.ellipse([wx-r, wy-r, wx+r, wy+r], fill=(10,10,14))
+        d.ellipse([wx-r, wy-r, wx+r, wy+r], outline=accent, width=2)
+        # Rim spokes (5-spoke)
+        for angle in range(0, 360, 72):
+            rad = math.radians(angle)
+            x1 = wx + int(math.cos(rad)*r*0.25)
+            y1 = wy + int(math.sin(rad)*r*0.25)
+            x2 = wx + int(math.cos(rad)*r*0.8)
+            y2 = wy + int(math.sin(rad)*r*0.8)
+            d.line([(x1,y1),(x2,y2)], fill=(55,60,75), width=2)
+        d.ellipse([wx-int(r*0.25), wy-int(r*0.25),
+                   wx+int(r*0.25), wy+int(r*0.25)], fill=(40,44,58))
+
+    # Headlight glow
+    hx, hy = cx+int(120*s), cy-int(5*s)
+    for r, alpha in [(22,30),(15,60),(8,120),(4,200)]:
+        d.ellipse([hx-r, hy-r, hx+r, hy+r], fill=(*accent[:3], alpha))
+
+    # Tail light
+    tx, ty = cx-int(118*s), cy-int(5*s)
+    d.ellipse([tx-8, ty-4, tx+8, ty+4], fill=(200,30,30))
+
+
+
+def _tt_wrap(text, n):
+    words=text.split(); lines,line=[],""
+    for w in words:
+        if len(line+w)<=n: line+=w+" "
+        else:
+            if line: lines.append(line.strip())
+            line=w+" "
+    if line: lines.append(line.strip())
+    return lines[:3]
+
+def _tt_shadow(d,x,y,text,font,fill,shadow=(0,0,0)):
+    for ox,oy in [(3,3),(-2,-2),(2,-2),(-2,2)]: d.text((x+ox,y+oy),text,font=font,fill=shadow)
+    d.text((x,y),text,font=font,fill=fill)
+
+def _tt_font(size,bold=True):
+    from PIL import ImageFont
+    try: return ImageFont.truetype(ENG_BOLD_FONT if bold else ENG_REG_FONT, size)
+    except: return ImageFont.load_default()
+
+def generate_thumbnail(title, format_type, output_name):
+    """6 distinct layouts — one per format type."""
+    try:
+        from PIL import Image, ImageDraw
+        import os, math, random
+        os.makedirs(THUMBNAIL_DIR, exist_ok=True)
+        W,H=1280,720
+        cfg=TT_THUMB_FORMATS.get(format_type, TT_THUMB_FORMATS["default"])
+        img=Image.new("RGB",(W,H),cfg["c1"]); d=ImageDraw.Draw(img)
+        def grad(c1=None,c2=None):
+            c1=c1 or cfg["c1"]; c2=c2 or cfg["c2"]
+            for y in range(H):
+                t=y/H; d.line([(0,y),(W,y)],fill=tuple(int(c1[j]+(c2[j]-c1[j])*t) for j in range(3)))
+        fmt=format_type or "default"
+        acc=cfg["acc"]
+
+        if fmt=="news":
+            grad(); d.polygon([(0,0),(W*2//3,0),(W//2,H),(0,H)],fill=(185,0,20))
+            d.polygon([(0,0),(W*2//3-8,0),(W//2-8,H),(0,H)],fill=(225,5,30))
+            d.text((22,75),"B R E A K I N G",font=_tt_font(26),fill=(255,210,0))
+            d.rectangle([14,70,18,H-70],fill=(255,210,0))
+            _animated_car(d,W-200,H//2+20,1.2,acc,"sedan")
+            lines=_tt_wrap(title,16); ty=125
+            for i,ln in enumerate(lines):
+                fs=92 if i==0 else 66; _tt_shadow(d,45,ty,ln,_tt_font(fs),(255,255,255) if i==0 else (220,220,220)); ty+=fs+14
+            d.rectangle([45,ty+6,580,ty+14],fill=(225,5,30))
+        elif fmt=="launch":
+            grad(); cx2,cy2=int(W*.7),H//2
+            for r in range(700,0,-5):
+                t=1-r/700; d.ellipse([cx2-r,cy2-r,cx2+r,cy2+r],outline=(0,min(255,int(t*80)),min(255,int(t*50))),width=1)
+            _animated_car(d,int(W*.68),H//2+15,1.4,acc,"sedan")
+            d.polygon([(W-200,0),(W,0),(W,200)],fill=acc)
+            d.text((W-108,28),"NEW",font=_tt_font(34),fill=(255,255,255))
+            d.text((W-142,68),"LAUNCH",font=_tt_font(24),fill=(255,255,255))
+            lines=_tt_wrap(title,17); ty=155
+            for i,ln in enumerate(lines):
+                fs=86 if i==0 else 62; _tt_shadow(d,48,ty,ln,_tt_font(fs),(255,255,255) if i==0 else (200,240,200)); ty+=fs+14
+            d.rectangle([48,ty+6,480,ty+14],fill=acc)
+        elif fmt=="comparison":
+            for x in range(W//2):
+                t=x/(W//2); d.line([(x,0),(x,H)],fill=tuple(int(cfg["c1"][j]+t*20) for j in range(3)))
+            for x in range(W//2,W):
+                t=(x-W//2)/(W//2); d.line([(x,0),(x,H)],fill=(int(8+t*30),int(3+t*10),int(3+t*6)))
+            d.rectangle([W//2-5,0,W//2+5,H],fill=(255,255,255))
+            d.ellipse([W//2-62,H//2-62,W//2+62,H//2+62],fill=(255,255,255))
+            d.text((W//2,H//2),"VS",font=_tt_font(72),fill=(12,12,35),anchor="mm")
+            _animated_car(d,W//4,H//2+10,1.1,acc,"sedan")
+            _animated_car(d,W*3//4,H//2+10,1.1,(255,130,0),"suv")
+            parts=title.lower().split(" vs ") if " vs " in title.lower() else ["",""]
+            if parts[0]: d.text((W//4,H-90),parts[0][:20].upper(),font=_tt_font(32),fill=(200,220,255),anchor="mm")
+            if len(parts)>1 and parts[1]: d.text((W*3//4,H-90),parts[1][:20].upper(),font=_tt_font(32),fill=(255,200,150),anchor="mm")
+            d.rectangle([0,0,W,55],fill=(15,15,40))
+            d.text((W//2,27),"HONEST COMPARISON",font=_tt_font(30),fill=(200,200,255),anchor="mm")
+        elif fmt=="ev":
+            grad(); random.seed(42)
+            for _ in range(12):
+                x=random.randint(50,W-50); y1,y2=random.randint(0,H//2),random.randint(H//2,H)
+                d.line([(x,y1),(x,y2)],fill=(0,75,95),width=2)
+                d.line([(x,y2),(x+random.choice([-100,100]),y2)],fill=(0,75,95),width=2)
+                d.ellipse([x-5,y2-5,x+5,y2+5],fill=(0,175,155))
+            _animated_car(d,int(W*.67),H//2+10,1.35,acc,"ev")
+            d.rounded_rectangle([42,42,190,96],radius=12,fill=acc)
+            d.text((116,69),"EV NEWS",font=_tt_font(28),fill=(255,255,255),anchor="mm")
+            lines=_tt_wrap(title,17); ty=118
+            for i,ln in enumerate(lines):
+                fs=82 if i==0 else 60; _tt_shadow(d,42,ty,ln,_tt_font(fs),(255,255,255) if i==0 else (160,240,225)); ty+=fs+14
+            d.rectangle([42,ty+5,480,ty+13],fill=acc)
+        elif fmt=="explainer":
+            for y in range(H):
+                t=y/H; d.line([(0,y),(W,y)],fill=(int(12+t*20),int(10+t*14),int(5+t*8)))
+            d.rectangle([0,0,W,88],fill=(28,22,5)); d.rectangle([0,80,W,92],fill=(215,162,0))
+            d.text((W//2,44),"💡 EXPLAINED IN TAMIL",font=_tt_font(36),fill=(215,162,0),anchor="mm")
+            d.rectangle([0,88,14,H],fill=(215,162,0))
+            _animated_car(d,W-165,H//2+30,1.0,acc,"sedan")
+            lines=_tt_wrap(title,19); ty=120
+            for i,ln in enumerate(lines):
+                fs=78 if i==0 else 58; _tt_shadow(d,38,ty,ln,_tt_font(fs),(255,248,220) if i==0 else (200,188,155)); ty+=fs+16
+            d.rounded_rectangle([38,H-108,305,H-58],radius=8,fill=(38,30,8))
+            d.text((172,H-83),"Must Know",font=_tt_font(26),fill=(215,162,0),anchor="mm")
+        else:
+            for y in range(H):
+                t=y/H; d.line([(0,y),(W,y)],fill=(int(15+t*32),int(8+t*18),int(3+t*8)))
+            for i,(y1,y2,col) in enumerate([(H-55,H,(38,20,8)),(H-95,H-58,(28,14,5)),(H-130,H-98,(20,10,3))]):
+                d.rectangle([0,y1,W,y2],fill=col)
+            pts=[]
+            for x in range(W//2,W,6):
+                peak=H-75-abs(math.sin((x-W//2)/110)*170); pts.append((x,int(peak)))
+            pts+=[(W,H-55),(W//2,H-55)]
+            if len(pts)>3: d.polygon(pts,fill=(22,12,4))
+            _animated_car(d,int(W*.66),H//2,1.35,acc,"suv")
+            d.rectangle([42,42,225,98],fill=acc); d.rectangle([42,42,225,98],outline=(255,160,50),width=3)
+            d.text((133,70),"4×4 SUV",font=_tt_font(32),fill=(255,255,255),anchor="mm")
+            lines=_tt_wrap(title,16); ty=125
+            for i,ln in enumerate(lines):
+                fs=84 if i==0 else 62; _tt_shadow(d,42,ty,ln,_tt_font(fs),(255,255,255) if i==0 else (240,180,110)); ty+=fs+14
+            d.rectangle([42,ty+6,470,ty+14],fill=acc)
+
+        d.text((38,H-44),"@tech_meets_travel",font=_tt_font(22,False),fill=(155,158,172))
+        out=f"{THUMBNAIL_DIR}/{output_name}_thumb.png"
+        img.save(out); log(f"  ✅ Thumbnail: {out}")
         return out
     except Exception as e:
-        log(f"  ⚠️ Thumbnail failed: {e}")
-        return None
-
-def upload_short_to_youtube(short_path, main_title, main_description, tags_str, youtube):
-    """Upload Short to YouTube with #Shorts tag for Shorts feed discovery."""
-    if not short_path or not os.path.exists(short_path):
-        return None
-    try:
-        # Shorts title: keep under 100 chars, add #Shorts
-        short_title = main_title[:90] + " #Shorts" if len(main_title) <= 90 else main_title[:88] + "… #Shorts"
-
-        # Shorts description: first 2 lines + #Shorts tag
-        short_desc_lines = (main_description or "").split("\n")[:3]
-        short_desc = "\n".join(short_desc_lines) + "\n\n#Shorts"
-
-        # Tags: add Shorts-specific tags
-        tags = [t.strip() for t in tags_str.split(",") if t.strip()][:25]
-        if "Shorts" not in tags: tags.insert(0, "Shorts")
-        if "YouTubeShorts" not in tags: tags.insert(1, "YouTubeShorts")
-
-        body = {
-            "snippet": {
-                "title":       short_title[:100],
-                "description": short_desc[:5000],
-                "tags":        tags[:30],
-                "categoryId":  "22",   # People & Blogs — YouTube classifies Shorts here
-            },
-            "status": {
-                "privacyStatus":           "public",
-                "selfDeclaredMadeForKids": False,
-            },
-        }
-
-        req = youtube.videos().insert(
-            part="snippet,status", body=body,
-            media_body=MediaFileUpload(short_path, chunksize=-1, resumable=True))
-        resp = req.execute()
-        vid = resp["id"]
-        log(f"  ✅ Short uploaded: https://youtu.be/{vid}")
-        return vid
-    except Exception as e:
-        log(f"  ⚠️ Short upload failed: {e}")
-        return None
-
-
-
-# ═══════════════════════════════════════════════════════════════════
-# RESILIENT LLM ROUTER — 5-provider waterfall
-# Priority: Groq (fast) → Gemini (reliable) → GitHub Models (free)
-#           → Cerebras (fast free) → Groq fallback models
-#
-# All providers use OpenAI-compatible SDK for consistency.
-# GitHub Models: uses GITHUB_TOKEN (auto-set in Actions — zero config)
-# Cerebras: uses CEREBRAS_API_KEY secret (optional, add if available)
-# ═══════════════════════════════════════════════════════════════════
-
-GITHUB_TOKEN    = os.environ.get("GITHUB_TOKEN", "")
-CEREBRAS_KEY    = os.environ.get("CEREBRAS_API_KEY", "")
-
-# ── Provider configs ────────────────────────────────────────────────
-PROVIDERS = [
-    # name, base_url, api_key, model, use_for
-    ("groq",     "https://api.groq.com/openai/v1",         GROQ_API_KEY,  "llama-3.3-70b-versatile",        "script"),
-    ("gemini",   None,                                       GEMINI_KEY,    "gemini-2.5-flash",               "all"),
-    ("github",   "https://models.inference.ai.azure.com",  GITHUB_TOKEN,  "gpt-4o-mini",                    "all"),
-    ("cerebras", "https://api.cerebras.ai/v1",              CEREBRAS_KEY,  "llama-3.3-70b",                  "all"),
-    ("groq_fb",  "https://api.groq.com/openai/v1",         GROQ_API_KEY,  "llama3-8b-8192",                 "fallback"),
-]
-
-def _call_provider(name, base_url, api_key, model, prompt, max_tokens=4000):
-    """Call a single provider. Returns text or raises."""
-    if not api_key:
-        raise Exception(f"{name}: no API key")
-
-    if name == "gemini":
-        # Gemini uses its own SDK
-        client = genai.Client(api_key=api_key)
-        resp = client.models.generate_content(
-            model=model, contents=prompt)
-        return resp.text
-    else:
-        # All others: OpenAI-compatible
-        from openai import OpenAI
-        client = OpenAI(base_url=base_url, api_key=api_key)
-        resp = client.chat.completions.create(
-            model=model,
-            messages=[{"role": "user", "content": prompt}],
-            max_tokens=max_tokens,
-            temperature=0.85,
-        )
-        return resp.choices[0].message.content
-
-
-def _is_retryable(err_str):
-    """True if the error is transient (rate limit / server overload)."""
-    return any(c in err_str for c in [
-        "429", "503", "502", "RESOURCE_EXHAUSTED", "UNAVAILABLE",
-        "high demand", "overloaded", "ServiceUnavailable",
-        "rate_limit", "tokens per day", "TPD", "Internal",
-        "timeout", "timed out",
-    ])
-
-
-def call_llm(prompt, max_retries=3, prefer="gemini", max_tokens=4000):
-    """
-    Resilient multi-provider router.
-    Tries each provider in priority order.
-    On transient errors → retry with backoff.
-    On permanent errors → skip to next provider immediately.
-    """
-    # Build provider order based on preference
-    if prefer == "groq":
-        order = ["groq", "gemini", "github", "cerebras", "groq_fb"]
-    else:
-        order = ["gemini", "groq", "github", "cerebras", "groq_fb"]
-
-    provider_map = {p[0]: p for p in PROVIDERS}
-    last_error = ""
-
-    for provider_name in order:
-        if provider_name not in provider_map:
-            continue
-        name, base_url, api_key, model, _ = provider_map[provider_name]
-        if not api_key:
-            continue   # skip providers with no key configured
-
-        for attempt in range(max_retries):
-            try:
-                result = _call_provider(name, base_url, api_key, model, prompt, max_tokens)
-                if result and result.strip():
-                    if attempt > 0 or provider_name != order[0]:
-                        log(f"  ✅ LLM: {name}/{model.split('-')[0]}")
-                    return result.strip()
-            except Exception as e:
-                err = str(e)
-                last_error = err
-                if _is_retryable(err):
-                    # Daily limit hit — skip provider entirely
-                    if "tokens per day" in err or "TPD" in err or "daily" in err.lower():
-                        log(f"  ⚠️ {name}: daily limit — trying next provider")
-                        break
-                    wait = min(10 * (2 ** attempt), 60)
-                    log(f"  ⏳ {name} retry {attempt+1}/{max_retries} in {wait}s ({err[:60]})")
-                    time.sleep(wait)
-                else:
-                    # Non-retryable (auth, invalid model etc) — skip provider
-                    log(f"  ⚠️ {name}: {err[:80]} — skipping")
-                    break
-
-    raise Exception(f"All LLM providers failed. Last: {last_error[:150]}")
-
-
-def call_llm_groq(prompt, max_retries=3):
-    """Script generation — prefers Groq for quality, all providers as fallback."""
-    return call_llm(prompt, max_retries=max_retries, prefer="groq", max_tokens=4000)
-
-
-def call_llm_gemini(prompt, max_retries=3):
-    """Explicit Gemini — but falls back gracefully to other providers."""
-    return call_llm(prompt, max_retries=max_retries, prefer="gemini", max_tokens=2000)
-
-
-# Keep _call_gemini and _call_groq for backward compatibility
-def _call_gemini(prompt, max_retries=5):
-    return call_llm(prompt, max_retries=max_retries, prefer="gemini")
-
-def _call_groq(prompt, max_retries=3):
-    return call_llm(prompt, max_retries=max_retries, prefer="groq")
-
-
-
-UPLOAD_QUEUE_FILE = "upload_queue.json"
-
-
-def is_quota_exceeded(err_str):
-    """Check if error is YouTube quota exceeded."""
-    return any(x in str(err_str).lower() for x in
-               ["quotaexceeded", "quota exceeded", "usageexceeded",
-                "403", "dailylimitexceeded"])
-
-
-def queue_for_retry(video_path, metadata, privacy="public"):
-    """Save failed upload to queue for next run."""
-    try:
-        queue = []
-        if os.path.exists(UPLOAD_QUEUE_FILE):
-            with open(UPLOAD_QUEUE_FILE) as f:
-                queue = json.load(f)
-        queue.append({
-            "video_path": video_path,
-            "metadata":   metadata,
-            "privacy":    privacy,
-            "queued_at":  datetime.datetime.now().isoformat(),
-        })
-        with open(UPLOAD_QUEUE_FILE, "w") as f:
-            json.dump(queue, f, indent=2, ensure_ascii=False)
-        log(f"  📋 Queued for retry: {os.path.basename(video_path)}")
-        # Commit queue to git so it persists
-        try:
-            run(["git", "config", "user.email", "bot@channel.com"])
-            run(["git", "config", "user.name",  "Bot"])
-            run(["git", "add", UPLOAD_QUEUE_FILE])
-            run(["git", "commit", "-m", "chore: queue video for upload retry"])
-            run(["git", "push"])
-        except: pass
-    except Exception as e:
-        log(f"  ⚠️ Queue save failed: {e}")
-
-
-def upload_pending_from_queue():
-    """Upload any videos queued from previous failed runs."""
-    if not os.path.exists(UPLOAD_QUEUE_FILE):
-        return
-    try:
-        with open(UPLOAD_QUEUE_FILE) as f:
-            queue = json.load(f)
-        if not queue:
-            return
-        log(f"📤 Processing upload queue ({len(queue)} pending)...")
-        youtube = get_authenticated_service()
-        if not youtube:
-            return
-        remaining = []
-        for item in queue:
-            path = item.get("video_path", "")
-            if not os.path.exists(path):
-                log(f"  ⚠️ Queued file missing: {path} — skipping")
-                continue
-            try:
-                vid = upload_to_youtube(path, item.get("metadata", {}),
-                                        item.get("privacy", "public"))
-                if vid:
-                    log(f"  ✅ Queued upload succeeded: {vid}")
-                else:
-                    remaining.append(item)
-            except Exception as e:
-                if is_quota_exceeded(e):
-                    log(f"  ⚠️ Still quota exceeded — keeping in queue")
-                    remaining.append(item)
-                else:
-                    log(f"  ⚠️ Queue upload failed: {e}")
-        with open(UPLOAD_QUEUE_FILE, "w") as f:
-            json.dump(remaining, f, indent=2, ensure_ascii=False)
-        if not remaining:
-            try:
-                run(["git", "add", UPLOAD_QUEUE_FILE])
-                run(["git", "commit", "-m", "chore: clear upload queue"])
-                run(["git", "push"])
-            except: pass
-    except Exception as e:
-        log(f"  ⚠️ Queue processing failed: {e}")
-
-
-def upload_to_youtube(video_path, metadata, privacy="public"):
-    if not os.path.exists(video_path):
-        log(f"❌ Video not found: {video_path}"); return None
-
-    youtube = get_authenticated_service()
-    if not youtube:
-        log("⚠️ YouTube auth failed — skipping upload"); return None
-
-    body = {
-        "snippet": {
-            "title":       metadata.get("title", "")[:100],
-            "description": metadata.get("description", "")[:5000],
-            "tags":        [t.strip() for t in
-                           validate_tags(metadata.get("tags","")).split(",")][:25],
-            "categoryId":  "2"   # Autos & Vehicles,
-        },
-        "status": {
-            "privacyStatus":           privacy,
-            "selfDeclaredMadeForKids": False,
-        },
-    }
-
-    try:
-        t0 = time.time()
-        req = youtube.videos().insert(
-            part="snippet,status", body=body,
-            media_body=MediaFileUpload(video_path, chunksize=-1, resumable=True))
-        resp = req.execute()
-        vid = resp["id"]
-        log(f"✅ Uploaded: https://youtu.be/{vid} ({time.time()-t0:.0f}s)")
-
-        if metadata.get("pinned_comment"):
-            try:
-                time.sleep(30)   # avoid rapid-fire spam detection
-                youtube.commentThreads().insert(
-                    part="snippet",
-                    body={"snippet": {"videoId": vid, "topLevelComment": {
-                        "snippet": {"textOriginal": metadata["pinned_comment"]}
-                    }}}).execute()
-                log("  ✅ Pinned comment set")
-            except: pass
-
-        thumb = metadata.get("thumbnail_path", "")
-        if thumb and os.path.exists(thumb):
-            try:
-                youtube.thumbnails().set(
-                    videoId=vid,
-                    media_body=MediaFileUpload(thumb, mimetype="image/png")
-                ).execute()
-                log("  ✅ Custom thumbnail uploaded")
-            except Exception as e:
-                log(f"  ⚠️ Thumbnail upload failed: {e}")
-
-        return vid
-    except Exception as e:
-        err = str(e)
-        if is_quota_exceeded(err):
-            log(f"❌ YouTube quota exceeded — queuing for next run")
-            queue_for_retry(video_path, metadata, privacy)
-        else:
-            log(f"❌ Upload failed: {err[:150]}")
-        return None
+        log(f"  ⚠️ Thumbnail: {e}"); return None
 
 
 def safe_process_video(topic=None, format_type=None, upload=False, privacy="public"):
@@ -1871,8 +1856,12 @@ def safe_process_video(topic=None, format_type=None, upload=False, privacy="publ
 
     safe_name = hashlib.md5(topic_val.encode()).hexdigest()[:10]
     img_dir   = os.path.join(PEXELS_DIR, safe_name)
-    log("📸 Fetching Pexels images...")
-    images = fetch_pexels_images(pexels_kw, img_dir, count=5)
+    log("🎨 Generating animated scenes...")
+    images = generate_scenes(safe_name, fmt, num_scenes=5)
+    if not images:
+        # Fallback to Pexels
+        log("📸 Fallback: Fetching Pexels images...")
+        images = fetch_pexels_images(pexels_kw, img_dir, count=5)
     if not images:
         ensure_fallback_image()
         images = ["image.png"] if os.path.exists("image.png") else []
