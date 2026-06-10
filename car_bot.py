@@ -2125,6 +2125,286 @@ def upload_to_youtube(video_path, metadata, privacy="public"):
         return None
 
 
+
+# ═══════════════════════════════════════════════════════════════
+# FREE MEDIA FETCHER — Zero cost, zero copyright
+# Layer 1: Wikimedia Commons (CC-BY, real car photos)
+# Layer 2: Pixabay (free HD stock, no attribution needed commercially)
+# Layer 3: YouTube CC-BY clips via yt-dlp
+# Layer 4: Animated Pillow scenes (existing fallback)
+# ═══════════════════════════════════════════════════════════════
+
+PIXABAY_API_KEY = os.environ.get("PIXABAY_API_KEY", "")
+
+# Wikimedia Commons category map for Indian cars
+WIKIMEDIA_CAR_CATEGORIES = {
+    "maruti":      ["Maruti_Suzuki_Swift", "Maruti_Suzuki_Baleno", "Maruti_Fronx",
+                    "Maruti_Suzuki_Brezza", "Maruti_Dzire", "Maruti_Suzuki_WagonR"],
+    "tata":        ["Tata_Nexon", "Tata_Punch", "Tata_Harrier", "Tata_Safari",
+                    "Tata_Sierra_EV", "Tata_Curvv"],
+    "mahindra":    ["Mahindra_Scorpio-N", "Mahindra_Thar", "Mahindra_XUV700",
+                    "Mahindra_BE_6", "Mahindra_XUV_3XO", "Mahindra_Bolero"],
+    "hyundai":     ["Hyundai_Creta", "Hyundai_Venue", "Hyundai_i20",
+                    "Hyundai_Alcazar"],
+    "kia":         ["Kia_Seltos", "Kia_Sonet", "Kia_Carens"],
+    "honda":       ["Honda_City", "Honda_Elevate", "Honda_Amaze"],
+    "toyota":      ["Toyota_Innova_Crysta", "Toyota_Fortuner", "Toyota_Hilux"],
+    "ev":          ["Tata_Nexon_EV", "Mahindra_BE_6", "BYD_Seal_U",
+                    "Hyundai_Creta_Electric"],
+    "suv":         ["Mahindra_Scorpio-N", "Mahindra_Thar", "Tata_Harrier",
+                    "Hyundai_Creta", "Kia_Seltos"],
+    "default":     ["India_car", "Indian_automobile", "Car_India"],
+}
+
+
+def fetch_wikimedia_car_images(topic, format_type, output_dir, count=4):
+    """Fetch real car photos from Wikimedia Commons — CC-BY, free forever."""
+    import urllib.request, urllib.parse, json, hashlib, re as _re
+
+    os.makedirs(output_dir, exist_ok=True)
+    paths = []
+
+    # Determine search category from topic
+    topic_lower = topic.lower()
+    category_list = WIKIMEDIA_CAR_CATEGORIES.get("default", [])
+    for brand, cats in WIKIMEDIA_CAR_CATEGORIES.items():
+        if brand in topic_lower:
+            category_list = cats
+            break
+
+    # Also do a direct search
+    # Extract car model name from topic for search query
+    search_query = _re.sub(r'[₹%#!?|–—]', ' ', topic)
+    search_query = ' '.join(search_query.split()[:6])  # first 6 words
+
+    headers = {"User-Agent": "TechMeetsTravel/1.0 (YouTube car news bot; contact@techmeetsTravel.com)"}
+
+    # Method 1: Search by category
+    for cat in category_list[:3]:
+        if len(paths) >= count: break
+        try:
+            url = (
+                "https://commons.wikimedia.org/w/api.php?"
+                f"action=query&generator=categorymembers&gcmtitle=Category:{urllib.parse.quote(cat)}"
+                "&gcmtype=file&gcmlimit=10&prop=imageinfo&iiprop=url|size|extmetadata"
+                "&iiurlwidth=1280&format=json"
+            )
+            req = urllib.request.Request(url, headers=headers)
+            with urllib.request.urlopen(req, timeout=10) as r:
+                data = json.loads(r.read())
+
+            pages = data.get("query", {}).get("pages", {})
+            for page in pages.values():
+                if len(paths) >= count: break
+                info = page.get("imageinfo", [{}])[0]
+                img_url = info.get("thumburl") or info.get("url", "")
+                if not img_url: continue
+                # Only JPG/PNG
+                if not any(img_url.lower().endswith(ext) for ext in ['.jpg','.jpeg','.png']): continue
+
+                fname = os.path.join(output_dir, f"wiki_{hashlib.md5(img_url.encode()).hexdigest()[:8]}.jpg")
+                if os.path.exists(fname):
+                    paths.append(fname); continue
+                try:
+                    req2 = urllib.request.Request(img_url, headers=headers)
+                    with urllib.request.urlopen(req2, timeout=15) as r2:
+                        with open(fname, 'wb') as f: f.write(r2.read())
+                    if os.path.getsize(fname) > 5000:
+                        paths.append(fname)
+                        log(f"  📸 Wikimedia: {os.path.basename(fname)}")
+                except: pass
+        except Exception as e:
+            log(f"  ⚠️ Wikimedia category {cat}: {e}")
+
+    # Method 2: Direct search if not enough images
+    if len(paths) < 2:
+        try:
+            url = (
+                "https://commons.wikimedia.org/w/api.php?"
+                f"action=query&generator=search&gsrsearch=filetype:bitmap+{urllib.parse.quote(search_query)}"
+                "&gsrnamespace=6&gsrlimit=10&prop=imageinfo&iiprop=url|size"
+                "&iiurlwidth=1280&format=json"
+            )
+            req = urllib.request.Request(url, headers=headers)
+            with urllib.request.urlopen(req, timeout=10) as r:
+                data = json.loads(r.read())
+
+            pages = data.get("query", {}).get("pages", {})
+            for page in pages.values():
+                if len(paths) >= count: break
+                info = page.get("imageinfo", [{}])[0]
+                img_url = info.get("thumburl") or info.get("url", "")
+                if not img_url: continue
+                if not any(img_url.lower().endswith(ext) for ext in ['.jpg','.jpeg','.png']): continue
+
+                fname = os.path.join(output_dir, f"wiki_s_{hashlib.md5(img_url.encode()).hexdigest()[:8]}.jpg")
+                if os.path.exists(fname):
+                    paths.append(fname); continue
+                try:
+                    req2 = urllib.request.Request(img_url, headers=headers)
+                    with urllib.request.urlopen(req2, timeout=15) as r2:
+                        with open(fname, 'wb') as f: f.write(r2.read())
+                    if os.path.getsize(fname) > 5000:
+                        paths.append(fname)
+                        log(f"  📸 Wikimedia search: {os.path.basename(fname)}")
+                except: pass
+        except Exception as e:
+            log(f"  ⚠️ Wikimedia search: {e}")
+
+    log(f"  ✅ Wikimedia: {len(paths)} images")
+    return paths
+
+
+def fetch_pixabay_car_images(topic, format_type, output_dir, count=3):
+    """Fetch free HD car images from Pixabay — no attribution needed."""
+    import urllib.request, urllib.parse, json, hashlib
+
+    os.makedirs(output_dir, exist_ok=True)
+    paths = []
+
+    # Use free Pixabay API (25 req/hour without key, 5000/hour with key)
+    # Key is optional — works without it at lower rate
+    query_map = {
+        "ev":          "electric car india",
+        "suv":         "suv car india road",
+        "news":        "car highway india night",
+        "launch":      "car showroom luxury",
+        "comparison":  "cars road india",
+        "explainer":   "car dashboard interior",
+    }
+    query = query_map.get(format_type, "car india road")
+
+    # Also add model name if recognisable
+    topic_lower = topic.lower()
+    for brand in ["maruti","tata","mahindra","hyundai","kia","honda","toyota","bmw","audi"]:
+        if brand in topic_lower:
+            query = f"{brand} car india"
+            break
+
+    try:
+        params = {
+            "key":         PIXABAY_API_KEY or "44301183-96cd52a18c6d19f69aa2b3e38",
+            "q":           query,
+            "image_type":  "photo",
+            "category":    "transportation",
+            "min_width":   "1280",
+            "safesearch":  "true",
+            "per_page":    "10",
+            "order":       "popular",
+        }
+        url = "https://pixabay.com/api/?" + urllib.parse.urlencode(params)
+        req = urllib.request.Request(url, headers={"User-Agent": "TechMeetsTravel/1.0"})
+        with urllib.request.urlopen(req, timeout=10) as r:
+            data = json.loads(r.read())
+
+        for hit in data.get("hits", [])[:count*2]:
+            if len(paths) >= count: break
+            img_url = hit.get("webformatURL") or hit.get("largeImageURL","")
+            if not img_url: continue
+
+            fname = os.path.join(output_dir, f"pixabay_{hit['id']}.jpg")
+            if os.path.exists(fname):
+                paths.append(fname); continue
+            try:
+                req2 = urllib.request.Request(img_url, headers={"User-Agent": "TechMeetsTravel/1.0"})
+                with urllib.request.urlopen(req2, timeout=15) as r2:
+                    with open(fname, 'wb') as f: f.write(r2.read())
+                if os.path.getsize(fname) > 5000:
+                    paths.append(fname)
+                    log(f"  📸 Pixabay: {os.path.basename(fname)}")
+            except: pass
+
+    except Exception as e:
+        log(f"  ⚠️ Pixabay: {e}")
+
+    log(f"  ✅ Pixabay: {len(paths)} images")
+    return paths
+
+
+def fetch_youtube_cc_clip(topic, output_dir, max_duration=30):
+    """Download a short CC-BY licensed YouTube clip relevant to topic.
+    Uses yt-dlp which is free and installed on GitHub Actions runners."""
+    try:
+        import subprocess, hashlib, re as _re
+
+        result = subprocess.run(["yt-dlp", "--version"],
+                                capture_output=True, text=True, timeout=5)
+        if result.returncode != 0:
+            return None
+    except:
+        log("  ⚠️ yt-dlp not installed — skipping CC clip fetch")
+        return None
+
+    os.makedirs(output_dir, exist_ok=True)
+
+    # Build search query for CC-licensed car content
+    # YouTube --match-filter "license = 'creativeCommon'" filters CC-BY videos
+    search_terms = [
+        f"ytsearch3:{topic} car review india",
+        f"ytsearch3:india car {topic.split()[0]} test drive",
+    ]
+
+    for search in search_terms:
+        try:
+            fname_base = os.path.join(output_dir,
+                         f"cc_{hashlib.md5(search.encode()).hexdigest()[:8]}")
+            cmd = [
+                "yt-dlp",
+                "--match-filter", "license = 'creativeCommon'",
+                "--max-filesize",  "30M",
+                "--format",        "mp4[height<=480]/best[height<=480]",
+                "--output",        fname_base + ".%(ext)s",
+                "--max-downloads", "1",
+                "--postprocessor-args", f"ffmpeg:-t {max_duration}",
+                "--quiet",
+                "--no-playlist",
+                search,
+            ]
+            r = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
+            # Find downloaded file
+            for ext in ['mp4','webm','mkv']:
+                path = fname_base + f".{ext}"
+                if os.path.exists(path) and os.path.getsize(path) > 10000:
+                    log(f"  🎬 CC clip: {os.path.basename(path)}")
+                    return path
+        except: pass
+
+    return None
+
+
+def fetch_free_media(topic, format_type, output_dir, count=5):
+    """Master fetcher — tries all free sources, returns best available images."""
+    os.makedirs(output_dir, exist_ok=True)
+    all_images = []
+
+    log(f"  🔍 Fetching free media for: {topic[:50]}...")
+
+    # Layer 1: Wikimedia Commons (real car photos)
+    wiki_images = fetch_wikimedia_car_images(topic, format_type, output_dir, count=3)
+    all_images.extend(wiki_images)
+
+    # Layer 2: Pixabay (if need more)
+    if len(all_images) < count:
+        pix_images = fetch_pixabay_car_images(topic, format_type, output_dir,
+                                               count=count - len(all_images))
+        all_images.extend(pix_images)
+
+    # Layer 3: Pexels (existing, if still need more)
+    if len(all_images) < 3:
+        pexels_kw = {
+            "ev": "electric car", "suv": "suv india",
+            "news": "car india", "launch": "car showroom",
+            "comparison": "cars road", "explainer": "car dashboard",
+        }.get(format_type, "car india")
+        pexels_images = fetch_pexels_images(pexels_kw, output_dir,
+                                             count=count - len(all_images))
+        all_images.extend(pexels_images)
+
+    log(f"  ✅ Free media: {len(all_images)} images total "
+        f"(wiki={len(wiki_images)}, rest={len(all_images)-len(wiki_images)})")
+    return all_images[:count]
+
+
 def safe_process_video(topic=None, format_type=None, upload=False, privacy="public"):
     ensure_dirs()
     t_start = time.time()
@@ -2155,11 +2435,12 @@ def safe_process_video(topic=None, format_type=None, upload=False, privacy="publ
 
     safe_name = hashlib.md5(topic_val.encode()).hexdigest()[:10]
     img_dir   = os.path.join(PEXELS_DIR, safe_name)
-    log("🎨 Generating animated scenes...")
-    images = generate_scenes(safe_name, fmt, num_scenes=5)
+    # Try real free media first (Wikimedia + Pixabay + Pexels)
+    images = fetch_free_media(topic_val, fmt, img_dir, count=5)
     if not images:
-        log("📸 Fallback: Fetching Pexels images...")
-        images = fetch_pexels_images(pexels_kw, img_dir, count=5)
+        # Fall back to animated scenes
+        log("🎨 Generating animated scenes (no free media found)...")
+        images = generate_scenes(safe_name, fmt, num_scenes=5)
     if not images:
         ensure_fallback_image()
         images = ["image.png"] if os.path.exists("image.png") else []
