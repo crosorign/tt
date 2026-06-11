@@ -2417,6 +2417,260 @@ def fetch_free_media(topic, format_type, output_dir, count=5):
     return all_images[:count]
 
 
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# UNIVERSAL SCENE GENERATOR — pure Pillow, zero network, always works
+# Generates 6-8 images per video using topic + deity/format as seed
+# ═══════════════════════════════════════════════════════════════════════
+
+def generate_video_scenes(output_name, topic="", scene_type="default",
+                          num_scenes=6, channel="generic"):
+    """Generate rich animated scene images. Pure Pillow — no network needed.
+
+    channel: "am" = devotional, "nn" = finance, "tt" = cars, "generic"
+    scene_type: format or deity or topic category
+    Returns list of image paths.
+    """
+    from PIL import Image, ImageDraw, ImageFont
+    import os, math, random, hashlib
+
+    seed = int(hashlib.md5((output_name + topic).encode()).hexdigest()[:8], 16)
+    random.seed(seed)
+    W, H = 1920, 1080
+
+    scene_dir = os.path.join(PEXELS_DIR, output_name)
+    os.makedirs(scene_dir, exist_ok=True)
+
+    def sf(size, bold=True):
+        try:
+            p = ENG_BOLD_FONT if bold else ENG_REG_FONT
+            return ImageFont.truetype(p, size)
+        except: return ImageFont.load_default()
+
+    def tf(size):
+        try: return ImageFont.truetype(TAMIL_BOLD_FONT, size)
+        except: return ImageFont.load_default()
+
+    def grad(d, c1, c2, w=W, h=H, axis='v'):
+        for i in range(h if axis=='v' else w):
+            t = i / (h if axis=='v' else w)
+            col = tuple(int(c1[j]+(c2[j]-c1[j])*t) for j in range(3))
+            if axis=='v': d.line([(0,i),(w,i)], fill=col)
+            else: d.line([(i,0),(i,h)], fill=col)
+
+    def glow(d, cx, cy, r_max, color, steps=15):
+        for r in range(r_max, 0, -r_max//steps):
+            t = 1-r/r_max
+            a = int(t*28)
+            d.ellipse([cx-r,cy-r,cx+r,cy+r], fill=(*color[:3],a))
+
+    paths = []
+
+    # ── Select scene palette based on channel ────────────────────────
+    if channel == "am":
+        palettes = [
+            {"c1":(45,8,0),  "c2":(10,2,0),  "acc":(255,125,0),  "name":"dawn"},
+            {"c1":(5,0,30),  "c2":(1,0,8),   "acc":(140,85,255), "name":"dusk"},
+            {"c1":(0,20,5),  "c2":(0,5,1),   "acc":(0,190,70),   "name":"forest"},
+            {"c1":(40,0,22), "c2":(12,0,6),  "acc":(255,50,160), "name":"temple"},
+            {"c1":(42,30,0), "c2":(12,8,0),  "acc":(255,200,0),  "name":"golden"},
+            {"c1":(0,22,40), "c2":(0,6,12),  "acc":(0,170,210),  "name":"ocean"},
+        ]
+    elif channel == "nn":
+        palettes = [
+            {"c1":(28,3,3),  "c2":(50,6,6),  "acc":(225,35,35),  "name":"alert"},
+            {"c1":(3,14,30), "c2":(5,24,52), "acc":(50,142,255), "name":"trust"},
+            {"c1":(2,20,5),  "c2":(4,38,8),  "acc":(0,190,75),   "name":"growth"},
+            {"c1":(22,14,3), "c2":(38,25,5), "acc":(255,160,0),  "name":"warm"},
+            {"c1":(18,3,24), "c2":(30,5,40), "acc":(175,75,255), "name":"premium"},
+            {"c1":(8,7,4),   "c2":(18,14,8), "acc":(215,162,0),  "name":"gold"},
+        ]
+    else:  # tt / generic
+        palettes = [
+            {"c1":(5,10,22), "c2":(18,8,38), "acc":(232,0,28),   "name":"speed"},
+            {"c1":(4,22,5),  "c2":(2,8,2),   "acc":(0,215,95),   "name":"launch"},
+            {"c1":(6,6,28),  "c2":(2,2,16),  "acc":(50,148,255), "name":"tech"},
+            {"c1":(0,18,22), "c2":(0,6,10),  "acc":(0,228,198),  "name":"ev"},
+            {"c1":(20,10,3), "c2":(7,3,0),   "acc":(255,138,0),  "name":"offroad"},
+            {"c1":(8,6,4),   "c2":(20,14,8), "acc":(255,198,0),  "name":"classic"},
+        ]
+
+    scene_list = ["hero", "ambient", "detail", "wide", "close", "atmosphere",
+                  "texture", "perspective"][:num_scenes]
+
+    for i, scene_name in enumerate(scene_list):
+        out = os.path.join(scene_dir, f"{i:02d}_{scene_name}.png")
+        if os.path.exists(out) and os.path.getsize(out) > 5000:
+            paths.append(out); continue
+
+        pal = palettes[i % len(palettes)]
+        c1, c2, acc = pal["c1"], pal["c2"], pal["acc"]
+        rs = seed + i * 6547  # different seed per scene
+        random.seed(rs)
+
+        img = Image.new("RGB", (W,H), c1)
+        d   = ImageDraw.Draw(img)
+        grad(d, c1, c2)
+
+        # ── Scene-specific elements ──────────────────────────────────
+
+        if scene_name == "hero":
+            # Central glow with radiating lines
+            cx, cy = W//2, H//2
+            glow(d, cx, cy, 500, acc, 20)
+            for angle in range(0, 360, 12):
+                rad = math.radians(angle + rs%30)
+                length = random.randint(300, 700)
+                x2 = cx + int(math.cos(rad)*length)
+                y2 = cy + int(math.sin(rad)*length)
+                d.line([(cx,cy),(x2,y2)], fill=(*acc,6+random.randint(0,8)), width=1)
+            glow(d, cx, cy, 200, acc, 12)
+            # Channel-specific symbol
+            if channel == "am":
+                try: d.text((cx,cy-40), "ॐ", font=sf(220), fill=(*acc,60), anchor="mm")
+                except: pass
+            elif channel == "nn":
+                try: d.text((cx,cy-30), "₹", font=sf(260), fill=(*acc,50), anchor="mm")
+                except: pass
+            else:
+                # Car silhouette
+                s = 1.8
+                body = [(cx-int(120*s),cy+int(25*s)),(cx-int(122*s),cy-int(8*s)),
+                        (cx-int(95*s),cy-int(35*s)),(cx-int(30*s),cy-int(62*s)),
+                        (cx+int(45*s),cy-int(62*s)),(cx+int(105*s),cy-int(30*s)),
+                        (cx+int(122*s),cy-int(8*s)),(cx+int(124*s),cy+int(25*s))]
+                d.polygon(body, fill=(22,25,38))
+                d.polygon(body, outline=acc, width=2)
+
+        elif scene_name == "ambient":
+            # Particle field
+            for _ in range(120):
+                px = random.randint(0,W); py = random.randint(0,H)
+                r = random.choice([1,1,1,2,2,3])
+                a = random.randint(40,160)
+                d.ellipse([px-r,py-r,px+r,py+r], fill=(*acc,a))
+            # Horizontal streaks
+            for _ in range(30):
+                y2 = random.randint(0,H)
+                ln = random.randint(50,400)
+                x2 = random.randint(0,W)
+                a = random.randint(15,50)
+                d.line([(x2,y2),(x2+ln,y2)], fill=(*acc,a), width=1)
+            # Central glow subtle
+            glow(d, W//2+random.randint(-200,200), H//2+random.randint(-100,100), 300, acc, 8)
+
+        elif scene_name == "detail":
+            # Grid pattern with focal point
+            for x in range(0,W,90):
+                a = max(8, 30 - abs(x-W//2)//30)
+                d.line([(x,0),(x,H)], fill=(*acc,a), width=1)
+            for y in range(0,H,90):
+                a = max(8, 30 - abs(y-H//2)//20)
+                d.line([(0,y),(W,y)], fill=(*acc,a), width=1)
+            # Focal circle
+            cx2 = W//2 + random.randint(-200,200)
+            cy2 = H//2 + random.randint(-80,80)
+            glow(d, cx2, cy2, 280, acc, 15)
+            for r in [200,160,120,80]:
+                d.ellipse([cx2-r,cy2-r,cx2+r,cy2+r], outline=(*acc,40+r//10), width=1)
+
+        elif scene_name == "wide":
+            # Panoramic horizontal layers
+            num_layers = random.randint(4,7)
+            for layer in range(num_layers):
+                t = layer/num_layers
+                y1 = int(H*t); y2 = int(H*(t+1/num_layers))+2
+                darkness = 0.6 + t*0.4
+                col = tuple(int(c1[j]*darkness + acc[j]*(1-darkness)*0.15) for j in range(3))
+                d.rectangle([0,y1,W,y2], fill=col)
+            # Horizon glow
+            hy = H//2 + random.randint(-50,50)
+            for r in range(H//3, 0, -H//60):
+                t = 1-r/(H//3)
+                a = int(t*12)
+                d.ellipse([W//2-r*2,hy-r//2,W//2+r*2,hy+r//2], fill=(*acc,a))
+
+        elif scene_name == "close":
+            # Abstract close-up texture
+            # Diagonal bands
+            for i in range(-H, W+H, 80):
+                a = random.randint(5,18)
+                d.polygon([(i,0),(i+60,0),(i+60+H,H),(i+H,H)], fill=(*acc,a))
+            # Dense particles in zone
+            zx, zy = random.randint(W//4,W*3//4), random.randint(H//4,H*3//4)
+            for _ in range(80):
+                px = zx + random.randint(-250,250)
+                py = zy + random.randint(-150,150)
+                r = random.randint(2,6)
+                a = random.randint(60,200)
+                d.ellipse([px-r,py-r,px+r,py+r], fill=(*acc,a))
+
+        elif scene_name == "atmosphere":
+            # Misty layers from bottom
+            for layer in range(8):
+                t = layer/8
+                y_base = H - int(layer * H//10)
+                for y in range(max(0,y_base-80), min(H,y_base+80)):
+                    tt = 1-abs(y-y_base)/80
+                    a = int(tt * (20+layer*5))
+                    col = tuple(min(255,c+a) for c in c1)
+                    d.line([(0,y),(W,y)], fill=col)
+            # Top vignette
+            for y in range(H//4):
+                t = 1-y/(H//4)
+                col = tuple(int(c*t*0.8) for c in c1)
+                d.line([(0,y),(W,y)], fill=col)
+            # Floating orbs
+            for _ in range(5):
+                ox = random.randint(100,W-100)
+                oy = random.randint(H//4,H*3//4)
+                r = random.randint(30,80)
+                glow(d, ox, oy, r*3, acc, 6)
+
+        elif scene_name == "texture":
+            # Geometric pattern
+            size = random.choice([60,80,100])
+            for row in range(H//size+2):
+                for col2 in range(W//size+2):
+                    x = col2*size + (row%2)*size//2
+                    y = row*size
+                    a = random.randint(5,22)
+                    shape = (row+col2+rs) % 3
+                    if shape == 0:
+                        d.ellipse([x,y,x+size-4,y+size-4], outline=(*acc,a), width=1)
+                    elif shape == 1:
+                        d.rectangle([x+4,y+4,x+size-8,y+size-8], outline=(*acc,a), width=1)
+                    else:
+                        d.polygon([(x+size//2,y),(x+size,y+size),(x,y+size)],
+                                  outline=(*acc,a), width=1)
+            glow(d, W//2, H//2, 400, acc, 10)
+
+        else:  # perspective
+            # Tunnel / vanishing point
+            cx3, cy3 = W//2+random.randint(-100,100), H//2+random.randint(-50,50)
+            for r in range(600, 0, -20):
+                t = 1-r/600; a = int(t*15)
+                ratio = 0.6 + t*0.4
+                d.ellipse([cx3-int(r*ratio),cy3-int(r*0.6),
+                           cx3+int(r*ratio),cy3+int(r*0.6)],
+                          outline=(*acc,a), width=1)
+            glow(d, cx3, cy3, 120, acc, 10)
+            # Radiating perspective lines
+            for angle2 in range(0, 360, 20):
+                rad2 = math.radians(angle2)
+                length2 = 800
+                x2 = cx3+int(math.cos(rad2)*length2)
+                y2 = cy3+int(math.sin(rad2)*length2)
+                d.line([(cx3,cy3),(x2,y2)], fill=(*acc,6), width=1)
+
+        img.save(out)
+        paths.append(out)
+
+    log(f"  🎨 {len(paths)} scenes generated ({channel}/{scene_type})")
+    return paths
+
+
 def safe_process_video(topic=None, format_type=None, upload=False, privacy="public"):
     ensure_dirs()
     t_start = time.time()
@@ -2447,12 +2701,14 @@ def safe_process_video(topic=None, format_type=None, upload=False, privacy="publ
 
     safe_name = hashlib.md5(topic_val.encode()).hexdigest()[:10]
     img_dir   = os.path.join(PEXELS_DIR, safe_name)
-    # Try real free media first (Wikimedia + Pixabay + Pexels)
-    images = fetch_free_media(topic_val, fmt, img_dir, count=5)
-    if not images:
-        # Fall back to animated scenes
-        log("🎨 Generating animated scenes (no free media found)...")
-        images = generate_scenes(safe_name, fmt, num_scenes=5)
+    # Scenes always first (zero network) + free media on top
+    log("🎨 Generating animated scenes...")
+    images = generate_video_scenes(safe_name, topic=topic_val,
+                                   scene_type=fmt, num_scenes=6, channel="tt")
+    # Try free media as bonus (Wikimedia + Pixabay + Pexels)
+    free_imgs = fetch_free_media(topic_val, fmt, img_dir, count=3)
+    if free_imgs:
+        images = free_imgs + images  # real photos first
     if not images:
         ensure_fallback_image()
         images = ["image.png"] if os.path.exists("image.png") else []
