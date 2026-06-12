@@ -527,15 +527,44 @@ def save_used_topic(topic):
 
 
 def parse_json_response(raw):
-    clean = raw.strip()
-    if clean.startswith("```"):
-        parts = clean.split("```")
-        clean = parts[1] if len(parts) > 1 else clean
-        if clean.startswith("json"):
-            clean = clean[4:]
-    return json.loads(clean.strip())
+    """Extract JSON from LLM response robustly — handles fences, control chars, truncation."""
+    import re as _re
+    text = raw.strip() if raw else ""
 
+    # Strip markdown fences
+    for fence in ["```json", "```JSON", "```"]:
+        if text.startswith(fence):
+            text = text[len(fence):]
+            if text.endswith("```"):
+                text = text[:-3]
+            break
 
+    text = text.strip()
+
+    # Remove control characters that break JSON (except \n \t)
+    text = _re.sub(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]", "", text)
+
+    # Try direct parse first
+    try:
+        return json.loads(text)
+    except Exception:
+        pass
+
+    # Try extracting first {...} block
+    match = _re.search(r"\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}", text, _re.DOTALL)
+    if match:
+        try:
+            return json.loads(match.group(0))
+        except Exception:
+            pass
+
+    # Try fixing common issues: trailing commas, unquoted keys
+    fixed = _re.sub(r",\s*([}\]])", r"\1", text)   # trailing commas
+    fixed = _re.sub(r"(\w+):", r'"\1":', fixed)    # unquoted keys (best-effort)
+    try:
+        return json.loads(fixed)
+    except Exception as e:
+        raise ValueError(f"Cannot parse JSON after all attempts: {e}\nRaw: {text[:200]}")
 def fetch_car_news():
     """Fetch real India car news from top automotive sites."""
     import urllib.request, urllib.error
@@ -925,11 +954,11 @@ def concat_clips(clips, output_path):
              "-i", flist,
              "-vf", "fps=30,scale=1920:1080:force_original_aspect_ratio=decrease,"
                     "pad=1920:1080:(ow-iw)/2:(oh-ih)/2",
-             "-c:v", "libx264", "-preset", "medium", "-crf", "20",
+             "-c:v", "libx264", "-preset", "veryfast", "-crf", "21",
              "-pix_fmt", "yuv420p",
              "-c:a", "aac", "-ar", "44100", "-ac", "2",
              "-movflags", "+faststart",
-             output_path], timeout=180)
+             output_path], timeout=480)
     try: os.remove(flist)
     except: pass
     return r.returncode == 0
@@ -1919,7 +1948,7 @@ def generate_thumbnail(title, format_type, output_name, bg_image_path=None):
             d.polygon([(0,0),(W*2//3-8,0),(W//2-8,H),(0,H)],fill=(225,5,30))
             d.text((22,75),"B R E A K I N G",font=_tt_font(26),fill=(255,210,0))
             d.rectangle([14,70,18,H-70],fill=(255,210,0))
-            _animated_car(d,W-200,H//2+20,1.2,acc,"sedan")
+            _draw_animated_car(d,W-200,H//2+20,1.2,acc,"sedan")
             lines=_tt_wrap(title,16); ty=125
             for i,ln in enumerate(lines):
                 fs=92 if i==0 else 66; _tt_shadow(d,45,ty,ln,_tt_font(fs),(255,255,255) if i==0 else (220,220,220)); ty+=fs+14
@@ -1928,7 +1957,7 @@ def generate_thumbnail(title, format_type, output_name, bg_image_path=None):
             grad(); cx2,cy2=int(W*.7),H//2
             for r in range(700,0,-5):
                 t=1-r/700; d.ellipse([cx2-r,cy2-r,cx2+r,cy2+r],outline=(0,min(255,int(t*80)),min(255,int(t*50))),width=1)
-            _animated_car(d,int(W*.68),H//2+15,1.4,acc,"sedan")
+            _draw_animated_car(d,int(W*.68),H//2+15,1.4,acc,"sedan")
             d.polygon([(W-200,0),(W,0),(W,200)],fill=acc)
             d.text((W-108,28),"NEW",font=_tt_font(34),fill=(255,255,255))
             d.text((W-142,68),"LAUNCH",font=_tt_font(24),fill=(255,255,255))
@@ -1944,8 +1973,8 @@ def generate_thumbnail(title, format_type, output_name, bg_image_path=None):
             d.rectangle([W//2-5,0,W//2+5,H],fill=(255,255,255))
             d.ellipse([W//2-62,H//2-62,W//2+62,H//2+62],fill=(255,255,255))
             d.text((W//2,H//2),"VS",font=_tt_font(72),fill=(12,12,35),anchor="mm")
-            _animated_car(d,W//4,H//2+10,1.1,acc,"sedan")
-            _animated_car(d,W*3//4,H//2+10,1.1,(255,130,0),"suv")
+            _draw_animated_car(d,W//4,H//2+10,1.1,acc,"sedan")
+            _draw_animated_car(d,W*3//4,H//2+10,1.1,(255,130,0),"suv")
             parts=title.lower().split(" vs ") if " vs " in title.lower() else ["",""]
             if parts[0]: d.text((W//4,H-90),parts[0][:20].upper(),font=_tt_font(32),fill=(200,220,255),anchor="mm")
             if len(parts)>1 and parts[1]: d.text((W*3//4,H-90),parts[1][:20].upper(),font=_tt_font(32),fill=(255,200,150),anchor="mm")
@@ -1958,7 +1987,7 @@ def generate_thumbnail(title, format_type, output_name, bg_image_path=None):
                 d.line([(x,y1),(x,y2)],fill=(0,75,95),width=2)
                 d.line([(x,y2),(x+random.choice([-100,100]),y2)],fill=(0,75,95),width=2)
                 d.ellipse([x-5,y2-5,x+5,y2+5],fill=(0,175,155))
-            _animated_car(d,int(W*.67),H//2+10,1.35,acc,"ev")
+            _draw_animated_car(d,int(W*.67),H//2+10,1.35,acc,"ev")
             d.rounded_rectangle([42,42,190,96],radius=12,fill=acc)
             d.text((116,69),"EV NEWS",font=_tt_font(28),fill=(255,255,255),anchor="mm")
             lines=_tt_wrap(title,17); ty=118
@@ -1971,7 +2000,7 @@ def generate_thumbnail(title, format_type, output_name, bg_image_path=None):
             d.rectangle([0,0,W,88],fill=(28,22,5)); d.rectangle([0,80,W,92],fill=(215,162,0))
             d.text((W//2,44),"💡 EXPLAINED IN TAMIL",font=_tt_font(36),fill=(215,162,0),anchor="mm")
             d.rectangle([0,88,14,H],fill=(215,162,0))
-            _animated_car(d,W-165,H//2+30,1.0,acc,"sedan")
+            _draw_animated_car(d,W-165,H//2+30,1.0,acc,"sedan")
             lines=_tt_wrap(title,19); ty=120
             for i,ln in enumerate(lines):
                 fs=78 if i==0 else 58; _tt_shadow(d,38,ty,ln,_tt_font(fs),(255,248,220) if i==0 else (200,188,155)); ty+=fs+16
@@ -1987,7 +2016,7 @@ def generate_thumbnail(title, format_type, output_name, bg_image_path=None):
                 peak=H-75-abs(math.sin((x-W//2)/110)*170); pts.append((x,int(peak)))
             pts+=[(W,H-55),(W//2,H-55)]
             if len(pts)>3: d.polygon(pts,fill=(22,12,4))
-            _animated_car(d,int(W*.66),H//2,1.35,acc,"suv")
+            _draw_animated_car(d,int(W*.66),H//2,1.35,acc,"suv")
             d.rectangle([42,42,225,98],fill=acc); d.rectangle([42,42,225,98],outline=(255,160,50),width=3)
             d.text((133,70),"4×4 SUV",font=_tt_font(32),fill=(255,255,255),anchor="mm")
             lines=_tt_wrap(title,16); ty=125
