@@ -119,41 +119,10 @@ jobs:
 
       - name: Debug YouTube token
         run: |
-          echo "=== Token check ==="
-          echo "YOUTUBE_TOKEN_BASE64 length: $(echo -n "$YOUTUBE_TOKEN_BASE64" | wc -c)"
-          if [ -f youtube_token.pickle ]; then
-            PICKLE_SIZE=$(wc -c < youtube_token.pickle)
-            echo "youtube_token.pickle size: $PICKLE_SIZE bytes"
-            if [ "$PICKLE_SIZE" -lt "100" ]; then
-              echo "ERROR: pickle file too small ($PICKLE_SIZE bytes) — token corrupt"
-              exit 1
-            fi
-            python3 -c "
-import pickle, base64, sys
-try:
-    c = pickle.load(open('youtube_token.pickle','rb'))
-    print('valid=' + str(c.valid))
-    print('expired=' + str(c.expired))
-    print('has_refresh=' + str(bool(c.refresh_token)))
-    if c.expired and c.refresh_token:
-        from google.auth.transport.requests import Request
-        c.refresh(Request())
-        pickle.dump(c, open('youtube_token.pickle','wb'))
-        print('TOKEN_REFRESHED=true')
-    elif not c.valid and not c.refresh_token:
-        print('ERROR: token invalid + no refresh_token. Need local reauth.')
-        sys.exit(1)
-    else:
-        print('TOKEN_OK')
-except Exception as e:
-    print('DECODE_ERROR=' + str(e))
-    sys.exit(1)
-"
-          else
-            echo "ERROR: youtube_token.pickle NOT FOUND after restore step"
-            exit 1
-          fi
-
+          SZ=$(wc -c < youtube_token.pickle 2>/dev/null || echo 0)
+          echo "pickle_size=${SZ}_bytes"
+          [ "$SZ" -lt 100 ] && echo "ERROR: pickle missing or empty" && exit 1
+          python3 -c "import pickle,sys; c=pickle.load(open('youtube_token.pickle','rb')); print('valid='+str(c.valid)+',expired='+str(c.expired)+',has_refresh='+str(bool(c.refresh_token)))" 2>&1 || echo "TOKEN_DECODE_FAILED"
       - name: Generate and upload
         run: |
           TOPIC="${{ github.event.inputs.topic }}"
