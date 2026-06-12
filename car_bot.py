@@ -86,21 +86,27 @@ VOICE_FEMALE = "en-IN-NeerjaNeural"   # Indian English female
 VOICE_MALE   = "en-IN-PrabhatNeural"  # Indian English male
 
 EQ_FEMALE = (
-    "highpass=f=80,"
-    "equalizer=f=300:t=q:w=0.7:g=1.5,"
-    "equalizer=f=3000:t=q:w=0.8:g=1,"
-    "acompressor=threshold=-18dB:ratio=2:attack=8:release=80:makeup=1,"
-    "loudnorm=I=-14:TP=-1.5:LRA=11"
+    "highpass=f=90,"
+    "equalizer=f=250:t=q:w=0.8:g=2,"    # warmth
+    "equalizer=f=900:t=q:w=0.9:g=2,"    # presence
+    "equalizer=f=2500:t=q:w=1:g=1.5,"   # clarity
+    "equalizer=f=5000:t=q:w=1:g=-2,"    # reduce sibilance
+    "equalizer=f=8000:t=q:w=1:g=-3,"    # cut harshness
+    "vibrato=f=4.0:d=0.020,"             # subtle natural wobble
+    "acompressor=threshold=-18dB:ratio=2:attack=8:release=80:makeup=2,"
+    "loudnorm=I=-14:TP=-1.5:LRA=9"
 )
 
 EQ_MALE = (
-    "highpass=f=60,"
-    "equalizer=f=200:t=q:w=0.7:g=2,"
-    "equalizer=f=2500:t=q:w=0.8:g=1.5,"
-    "acompressor=threshold=-20dB:ratio=1.8:attack=8:release=80:makeup=2,"
-    "loudnorm=I=-14:TP=-1.5:LRA=10"
+    "highpass=f=70,"
+    "equalizer=f=150:t=q:w=0.7:g=2,"    # chest resonance
+    "equalizer=f=500:t=q:w=0.8:g=1.5,"
+    "equalizer=f=2000:t=q:w=1:g=2,"     # intelligibility
+    "equalizer=f=6000:t=q:w=1:g=-2,"
+    "vibrato=f=3.3:d=0.016,"             # very subtle on male
+    "acompressor=threshold=-16dB:ratio=2:attack=6:release=60:makeup=2.5,"
+    "loudnorm=I=-14:TP=-1.5:LRA=9"
 )
-
 VOICE_ASSIGNMENT = {
     "news":       ("male",   VOICE_MALE,   EQ_MALE),
     "launch":     ("male",   VOICE_MALE,   EQ_MALE),
@@ -111,6 +117,16 @@ VOICE_ASSIGNMENT = {
     "default":    ("male",   VOICE_MALE,   EQ_MALE),
 }
 
+
+RATE_BY_FORMAT_TT = {
+    "news":       "-5%",    # fast, urgent breaking news
+    "launch":     "-6%",    # energetic reveal
+    "comparison": "-10%",   # measured, analytical
+    "explainer":  "-11%",   # clear for technical info
+    "ev":         "-7%",    # modern, confident
+    "suv":        "-8%",    # bold, confident
+    "default":    "-8%",
+}
 BGM_PROFILES = {
     "news":       {"freq": "528", "freq2": "396", "mood": "energetic modern"},
     "launch":     {"freq": "440", "freq2": "880", "mood": "exciting reveal"},
@@ -307,6 +323,18 @@ HARD RULES:
     GOOD: "Honest take? The base variant. Skip the top spec. That panoramic roof costs you ₹1.5 lakh and adds zero to the driving experience on Indian roads."
     BAD: "The vehicle offers impressive specifications including advanced safety features."
     BAD: "This automobile presents exceptional value proposition for Indian consumers."
+
+PAUSE MARKERS — mandatory for human-sounding narration:
+- After opening money shot:      [PAUSE_LONG]
+- After key price/spec reveal:   [PAUSE_SHORT]
+- Before "But here's the thing": [PAUSE_MED]
+- Between beats:                 [PAUSE_LONG]
+- After "And wait, it gets better": [PAUSE_MED]
+
+Example:
+"Tata just dropped the Harrier EV price by ₹3 lakhs. [PAUSE_LONG]
+That's cheaper than a base Creta now. [PAUSE_SHORT]
+But here's what nobody's talking about... [PAUSE_LONG]"
 """
 
 SUBTITLE_PROMPT = """You are a professional subtitle editor.
@@ -358,7 +386,30 @@ A question that forces a 2-option reply.
 "Which would you pick — comment below 👇"
 Or: "What's your biggest concern about EVs in India? Comment below 👇"
 
-TAGS: Mix of specific (car name, model year) + broad (indian cars, car news india, ev india)
+TAGS (30 total — monetisation priority):
+Tier 1 (5 high-volume): "indian cars 2026", "car news india", "ev india", "best suv india", "car review india"
+Tier 2 (10 model-specific): "[car name]", "[car name] 2026", "[car name] price", "[car name] review"
+Tier 3 (10 buying-intent, HIGH CPM): "should i buy [car]", "[car] worth buying 2026", "best car india 2026 budget", "car emi calculator india", "[car] vs [car] india"
+Tier 4 (5 trending): current news angle tags
+
+CHAPTERS (generate based on actual script):
+0:00 The Main Story
+0:20 Full Details — Specs / Price / Variants
+1:00 Comparison / Context
+1:25 Honest Take — Should You Buy?
+1:45 Subscribe & Comment 👇
+
+DESCRIPTION must include:
+🔑 Key Specs: [price] | [engine/motor] | [key feature]
+📊 Source: [source_citation]
+🚗 More at: techmeetsTravel.com
+🔔 Subscribe for daily car news
+
+ENGAGEMENT HOOKS (add naturally in script):
+- At 30s: unexpected comparison or "most people don't know this about [car]"
+- At 60%: "Subscribe — I cover every Indian launch before anyone else."
+- End: "Which would you pick — [car A] or [car B]? Drop below 👇"
+- Share: "Tag a friend who's thinking of buying this car."
 """
 
 THUMBNAIL_PROMPT = """Create a detailed AI image generation prompt for a YouTube thumbnail.
@@ -540,6 +591,95 @@ def fetch_trends():
     except:
         pass
     return "- upcoming cars india\n- ev cars 2026\n- new suv launches"
+
+
+# ═══════════════════════════════════════════════════════════════
+# FREE MEDIA: Pollinations AI (TT) + End Screen
+# ═══════════════════════════════════════════════════════════════
+
+def fetch_pollinations_image_tt(car_name, format_type, output_path):
+    """Free AI-generated unique car image — no API key, unique per video."""
+    import urllib.parse, random
+    prompts = {
+        "ev":         f"{car_name} electric vehicle futuristic cinematic photography dramatic studio lighting Indian highway photorealistic 8K no text",
+        "launch":     f"{car_name} brand new reveal dramatic studio lighting automotive photography India photorealistic 8K no text",
+        "comparison": f"two modern Indian SUVs side by side dramatic comparison automotive photography no text",
+        "suv":        f"{car_name} SUV mountain terrain cinematic automotive photography India photorealistic 8K no text",
+        "default":    f"{car_name} cinematic automotive photography dramatic lighting Indian highway professional car shoot 8K no text",
+    }
+    prompt = prompts.get(format_type, prompts["default"])
+    url = (f"https://image.pollinations.ai/prompt/{urllib.parse.quote(prompt)}"
+           f"?width=1920&height=1080&nologo=true&enhance=true&seed={random.randint(1,99999)}")
+    try:
+        r = requests.get(url, timeout=90, stream=True)
+        if r.status_code == 200:
+            with open(output_path, "wb") as f:
+                for chunk in r.iter_content(8192): f.write(chunk)
+            log(f"  🎨 AI car image generated")
+            return output_path
+    except Exception as e:
+        log(f"  ⚠️ Pollinations TT: {e}")
+    return None
+
+
+def add_end_screen_tt(youtube_service, video_id, duration_seconds):
+    """Add subscribe + recent video end screen in last 20 seconds."""
+    end_ms = max(0, int(duration_seconds) - 20) * 1000
+    try:
+        youtube_service.videos().update(
+            part="endScreenContent",
+            body={
+                "id": video_id,
+                "endScreenContent": {
+                    "elements": [
+                        {
+                            "type": "SUBSCRIBE",
+                            "position": {"cornerPosition": "TOP_RIGHT", "type": "CORNER"},
+                            "startOffsetMs": str(end_ms),
+                            "durationMs": "20000",
+                        },
+                        {
+                            "type": "RECENT_UPLOAD",
+                            "position": {"cornerPosition": "BOTTOM_LEFT", "type": "CORNER"},
+                            "startOffsetMs": str(end_ms),
+                            "durationMs": "20000",
+                        },
+                    ]
+                }
+            }
+        ).execute()
+        log("  ✅ End screen added")
+    except Exception as e:
+        log(f"  ⚠️ End screen: {e}")
+
+
+TT_PLAYLIST_MAP_CONFIG = {
+    "ev":         "TT_PLAYLIST_EV",
+    "launch":     "TT_PLAYLIST_LAUNCHES",
+    "comparison": "TT_PLAYLIST_COMPARE",
+    "explainer":  "TT_PLAYLIST_EXPLAINER",
+    "suv":        "TT_PLAYLIST_SUV",
+    "news":       "TT_PLAYLIST_NEWS",
+    "default":    "TT_PLAYLIST_DEFAULT",
+}
+
+def add_to_playlist_tt(youtube_service, video_id, format_type):
+    """Auto-add video to correct format playlist."""
+    env_key = TT_PLAYLIST_MAP_CONFIG.get(format_type, TT_PLAYLIST_MAP_CONFIG["default"])
+    playlist_id = os.environ.get(env_key, "")
+    if not playlist_id:
+        return
+    try:
+        youtube_service.playlistItems().insert(
+            part="snippet",
+            body={"snippet": {
+                "playlistId": playlist_id,
+                "resourceId": {"kind": "youtube#video", "videoId": video_id}
+            }}
+        ).execute()
+        log(f"  ✅ Added to {format_type} playlist")
+    except Exception as e:
+        log(f"  ⚠️ Playlist add: {e}")
 
 
 def fetch_pexels_images(keyword, output_dir, count=5):
@@ -829,6 +969,15 @@ def build_video_filter(images, total_frames, fps=25, seed=0):
     return num, ";".join(filters), prev
 
 
+
+def inject_pauses(text):
+    """Convert [PAUSE_X] markers to natural ellipsis pauses for edge-tts."""
+    text = text.replace("[PAUSE_LONG]",  "  ...  ")
+    text = text.replace("[PAUSE_MED]",   " ... ")
+    text = text.replace("[PAUSE_SHORT]", " .. ")
+    return text
+
+
 def create_video(script_text, english_subtitles, images_input, output_name,
                  format_type="default", title_short="", bgm_path=None,
                  source_citation="", topic_val=""):
@@ -845,6 +994,7 @@ def create_video(script_text, english_subtitles, images_input, output_name,
     video_file  = f"{OUTPUT_DIR}/{output_name}_video.mp4"
     short_file  = f"{SHORTS_DIR}/{output_name}_short.mp4"
 
+    script_text = inject_pauses(script_text)  # add natural breath pauses
     with open(script_file, "w", encoding="utf-8") as f:
         f.write(script_text)
 
@@ -854,7 +1004,7 @@ def create_video(script_text, english_subtitles, images_input, output_name,
     t0 = time.time()
     try:
         r = run(["edge-tts", "--file", script_file, "--voice", voice_id,
-                 "--rate=-8%", "--pitch=+0Hz", "--write-media", voice_file],
+                 "--rate=" + RATE_BY_FORMAT_TT.get(format_type, "-8%"), "--pitch=+0Hz", "--write-media", voice_file],
                 timeout=300)
     except subprocess.TimeoutExpired:
         log("❌ TTS timeout"); return None
@@ -1845,7 +1995,9 @@ def upload_short_to_youtube(short_path, main_title, main_description, tags_str, 
                 "title":       short_title[:100],
                 "description": short_desc[:5000],
                 "tags":        tags[:30],
-                "categoryId":  "22",   # People & Blogs — YouTube classifies Shorts here
+                "categoryId":  "22",   # Shorts stay as People & Blogs — YouTube auto-classifies
+            "defaultLanguage": "en",
+            "defaultAudioLanguage": "en",
             },
             "status": {
                 "privacyStatus":           "public",
@@ -2087,7 +2239,9 @@ def upload_to_youtube(video_path, metadata, privacy="public"):
             "description": metadata.get("description", "")[:5000],
             "tags":        [t.strip() for t in
                            validate_tags(metadata.get("tags","")).split(",")][:25],
-            "categoryId":  "2"   # Autos & Vehicles,
+            "categoryId":  "2",   # Autos & Vehicles
+            "defaultLanguage": "en",
+            "defaultAudioLanguage": "en",
         },
         "status": {
             "privacyStatus":           privacy,
@@ -2103,6 +2257,11 @@ def upload_to_youtube(video_path, metadata, privacy="public"):
         resp = req.execute()
         vid = resp["id"]
         log(f"✅ Uploaded: https://youtu.be/{vid} ({time.time()-t0:.0f}s)")
+
+        # End screen + playlist
+        video_dur = metadata.get("duration_seconds", 120)
+        add_end_screen_tt(youtube, vid, video_dur)
+        add_to_playlist_tt(youtube, vid, metadata.get("format", "default"))
 
         if metadata.get("pinned_comment"):
             try:
