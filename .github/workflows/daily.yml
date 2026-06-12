@@ -119,35 +119,12 @@ jobs:
 
       - name: Debug YouTube token
         run: |
-          echo "=== Token debug ==="
-          if [ -n "$YOUTUBE_TOKEN_BASE64" ]; then
-            echo "TOKEN_B64_LEN=$(echo -n $YOUTUBE_TOKEN_BASE64 | wc -c)"
-            python3 << 'HEREDOC'
-import pickle, os, base64, sys
-b64 = os.environ.get('YOUTUBE_TOKEN_BASE64', '')
-try:
-    creds = pickle.loads(base64.b64decode(b64))
-    print(f"  creds_type={type(creds).__name__}")
-    print(f"  valid={creds.valid}")
-    print(f"  expired={creds.expired}")
-    print(f"  has_refresh_token={bool(creds.refresh_token)}")
-    print(f"  expiry={getattr(creds,'expiry',None)}")
-    if creds.expired and creds.refresh_token:
-        from google.auth.transport.requests import Request
-        creds.refresh(Request())
-        with open('youtube_token.pickle','wb') as f: pickle.dump(creds,f)
-        print("  TOKEN_REFRESHED=true")
-    elif not creds.valid and not creds.refresh_token:
-        print("  ERROR=token_invalid_no_refresh_reauth_needed")
-    else:
-        print("  TOKEN_STATUS=valid_ready")
-except Exception as e:
-    print(f"  DECODE_ERROR={e}")
-HEREDOC
+          echo "TOKEN_B64_LEN=$(echo -n "${YOUTUBE_TOKEN_BASE64}" | wc -c)"
+          if [ -z "$YOUTUBE_TOKEN_BASE64" ]; then
+            echo "ERROR: YOUTUBE_TOKEN_BASE64 is EMPTY - upload will fail"
           else
-            echo "ERROR: YOUTUBE_TOKEN_BASE64 secret is EMPTY or not set"
+            python3 -c "import pickle,os,base64; b64=os.environ.get('YOUTUBE_TOKEN_BASE64',''); c=pickle.loads(base64.b64decode(b64)); print('valid='+str(c.valid)+' expired='+str(c.expired)+' has_refresh='+str(bool(c.refresh_token)))" 2>&1 || echo "TOKEN_DECODE_FAILED"
           fi
-
 
       - name: Generate and upload
         run: |
