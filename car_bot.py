@@ -831,7 +831,7 @@ def build_text_overlay(title_short, format_type):
 
     if title:
         overlays.append(
-            f"drawtext=fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf:text='{title}':fontsize=36:fontcolor=white@1.0:"
+            f"drawtext=fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf:text='{title}':fontsize=46:fontcolor=white@1.0:"
             f"x=(w-tw)/2:y=h-100:"
             f"shadowcolor=black@0.95:shadowx=3:shadowy=3:"
             f"alpha='if(lt(t,0.5),0,if(lt(t,2),(t-0.5)/1.5,if(lt(t,7),1,if(lt(t,8),(8-t),0))))'"
@@ -866,7 +866,7 @@ def make_intro_clip(output_path):
            "-loop", "1", "-t", str(INTRO_DURATION + 0.1), "-i", INTRO_FRAME]
     if has_bell:
         cmd.extend(["-i", bell])
-    vf = (f"fps=25,scale=1920:1080:force_original_aspect_ratio=decrease,"
+    vf = (f"fps=30,scale=1920:1080:force_original_aspect_ratio=decrease,"
           f"pad=1920:1080:(ow-iw)/2:(oh-ih)/2,"
           f"fade=t=in:st=0:d=0.4,fade=t=out:st={INTRO_DURATION-0.4}:d=0.4")
     cmd.extend(["-vf", vf])
@@ -891,10 +891,10 @@ def make_outro_clip(output_path):
     if not os.path.exists(OUTRO_FRAME):
         return None
     text_filter = (
-        "drawtext=fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf:text='Subscribe for daily car news 🔔':fontsize=48:"
+        "drawtext=fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf:text='Subscribe for daily car news 🔔':fontsize=56:"
         "fontcolor=white@0.95:x=(w-tw)/2:y=h-120:"
         "shadowcolor=black@0.9:shadowx=3:shadowy=3,"
-        "drawtext=fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf:text='@tech_meets_travel':fontsize=32:"
+        "drawtext=fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf:text='@tech_meets_travel':fontsize=42:"
         "fontcolor=gold@0.9:x=(w-tw)/2:y=h-65:"
         "shadowcolor=black@0.8:shadowx=2:shadowy=2"
     )
@@ -902,7 +902,7 @@ def make_outro_clip(output_path):
              "-loop", "1", "-t", str(OUTRO_DURATION + 0.1), "-i", OUTRO_FRAME,
              "-f", "lavfi", "-i", "anullsrc=r=44100:cl=stereo",
              "-filter_complex",
-             f"[0:v]fps=25,scale=1920:1080:force_original_aspect_ratio=decrease,"
+             f"[0:v]fps=30,scale=1920:1080:force_original_aspect_ratio=decrease,"
              f"pad=1920:1080:(ow-iw)/2:(oh-ih)/2,"
              f"fade=t=in:st=0:d=0.4,"
              f"fade=t=out:st={OUTRO_DURATION-0.4}:d=0.4,"
@@ -923,7 +923,7 @@ def concat_clips(clips, output_path):
             f.write(f"file '{os.path.abspath(c)}'\n")
     r = run(["ffmpeg", "-y", "-f", "concat", "-safe", "0",
              "-i", flist,
-             "-vf", "fps=25,scale=1920:1080:force_original_aspect_ratio=decrease,"
+             "-vf", "fps=30,scale=1920:1080:force_original_aspect_ratio=decrease,"
                     "pad=1920:1080:(ow-iw)/2:(oh-ih)/2",
              "-c:v", "libx264", "-preset", "veryfast", "-crf", "24",
              "-pix_fmt", "yuv420p",
@@ -1029,7 +1029,7 @@ def create_video(script_text, english_subtitles, images_input, output_name,
             "[v][b]amix=inputs=2:duration=first:dropout_transition=2[out]"
         ).format(fo=fo, bfo=bfo)
         run(["ffmpeg", "-y", "-i", human_file, "-i", bgm_path,
-             "-filter_complex", fc, "-map", "[out]", "-ac", "2", mixed_file])
+             "-filter_complex", fc, "-map", "[out]", "-ac", "2", "-c:a", "aac", "-b:a", "192k", mixed_file])
         audio = mixed_file if os.path.exists(mixed_file) else human_file
     else:
         audio = human_file
