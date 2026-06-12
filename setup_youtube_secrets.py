@@ -44,8 +44,10 @@ def main():
     CLIENT_SECRETS = "client_secrets.json"
     TOKEN_FILE     = "youtube_token.pickle"
     SCOPES         = [
-        "https://www.googleapis.com/auth/youtube",
-        "https://www.googleapis.com/auth/youtube.upload",
+        "https://www.googleapis.com/auth/youtube",            # Full management
+        "https://www.googleapis.com/auth/youtube.upload",     # Upload videos
+        "https://www.googleapis.com/auth/youtube.force-ssl",  # Comments + metadata
+        "https://www.googleapis.com/auth/youtube.readonly",   # Read channel info
     ]
 
     print("\n" + "="*55)
