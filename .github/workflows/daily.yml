@@ -117,11 +117,11 @@ jobs:
           fi
 
 
-      - name: Debug YouTube token
+      - name: Validate and refresh YouTube token
         run: |
           SZ=$(wc -c < youtube_token.pickle 2>/dev/null || echo 0)
           echo "pickle_size=${SZ}_bytes"
-          [ "$SZ" -lt 100 ] && echo "ERROR: pickle missing or empty" && exit 1
+          [ "$SZ" -lt 100 ] && echo "ERROR: pickle missing/empty" && exit 1
           python3 -c "import pickle,sys; c=pickle.load(open('youtube_token.pickle','rb')); print('valid='+str(c.valid)+',expired='+str(c.expired)+',has_refresh='+str(bool(c.refresh_token)))" 2>&1 || echo "TOKEN_DECODE_FAILED"
       - name: Generate and upload
         run: |
