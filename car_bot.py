@@ -611,7 +611,7 @@ def fetch_pollinations_image_tt(car_name, format_type, output_path):
     url = (f"https://image.pollinations.ai/prompt/{urllib.parse.quote(prompt)}"
            f"?width=1920&height=1080&nologo=true&enhance=true&seed={random.randint(1,99999)}")
     try:
-        r = requests.get(url, timeout=90, stream=True)
+        r = requests.get(url, timeout=20, stream=True)
         if r.status_code == 200:
             with open(output_path, "wb") as f:
                 for chunk in r.iter_content(8192): f.write(chunk)
@@ -2877,27 +2877,31 @@ def safe_process_video(topic=None, format_type=None, upload=False, privacy="publ
     images = generate_video_scenes(safe_name, topic=topic_val,
                                    scene_type=fmt, num_scenes=6, channel="tt")
 
-    # Layer 1: Pollinations AI — unique car image per video (free, no API key)
-    log("🎨 Generating AI car image...")
-    poll_path = os.path.join(img_dir, "ai_car.jpg")
-    car_name  = topic_val.split()[0] if topic_val else "Indian SUV"
-    poll_img  = fetch_pollinations_image_tt(car_name, fmt, poll_path)
-    if poll_img:
-        log(f"  🎨 AI car image generated")
-
-    # Layer 2: Existing free media (Wikimedia + Pixabay + Pexels)
-    free_imgs = fetch_free_media(topic_val, fmt, img_dir, count=3)
-
-    # Merge: AI first, then real photos, then scenes
-    real_imgs = []
-    if poll_img: real_imgs.append(poll_img)
-    real_imgs.extend(free_imgs or [])
-    if real_imgs:
-        images = real_imgs + images
+    # Layer 1 (GUARANTEED): Animated PIL scenes — zero network, always works
+    # (already generated above — just add bonus layers on top)
     if not images:
         ensure_fallback_image()
         images = ["image.png"] if os.path.exists("image.png") else []
+    log(f"  ✅ Scenes: {len(images)} generated")
 
+    # Layer 2: Existing free media — Wikimedia + Pixabay + Pexels (reliable)
+    free_imgs = fetch_free_media(topic_val, fmt, img_dir, count=3)
+    if free_imgs:
+        images = free_imgs + images
+
+    # Layer 3: Pollinations AI (bonus — non-blocking, 20s timeout)
+    poll_img = None
+    try:
+        poll_path = os.path.join(img_dir, "ai_car.jpg")
+        car_name  = topic_val.split()[0] if topic_val else "Indian SUV"
+        poll_img  = fetch_pollinations_image_tt(car_name, fmt, poll_path)
+        if poll_img:
+            images = [poll_img] + images
+            log(f"  🎨 AI car image generated")
+    except Exception as e:
+        log(f"  ⚠️ Pollinations skipped: {e}")
+
+    log(f"  📦 Total images: {len(images)}")
     # Best bg for thumbnail
     thumb_bg = poll_img or (free_imgs[0] if free_imgs else None)
 
