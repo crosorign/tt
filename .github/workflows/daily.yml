@@ -117,38 +117,38 @@ jobs:
           fi
 
 
-      - name: Debug token validity
+      - name: Debug YouTube token
         run: |
-          python3 -c "
+          echo "=== Token debug ==="
+          if [ -n "$YOUTUBE_TOKEN_BASE64" ]; then
+            echo "TOKEN_B64_LEN=$(echo -n $YOUTUBE_TOKEN_BASE64 | wc -c)"
+            python3 << 'HEREDOC'
 import pickle, os, base64, sys
 b64 = os.environ.get('YOUTUBE_TOKEN_BASE64', '')
-print(f'TOKEN_B64_LEN={len(b64)}')
-if not b64:
-    print('ERROR: YOUTUBE_TOKEN_BASE64 is EMPTY')
-    sys.exit(0)
 try:
     creds = pickle.loads(base64.b64decode(b64))
-    print(f'type={type(creds).__name__}')
-    print(f'valid={creds.valid}')
-    print(f'expired={creds.expired}')
-    print(f'has_refresh={bool(creds.refresh_token)}')
-    print(f'expiry={creds.expiry}')
+    print(f"  creds_type={type(creds).__name__}")
+    print(f"  valid={creds.valid}")
+    print(f"  expired={creds.expired}")
+    print(f"  has_refresh_token={bool(creds.refresh_token)}")
+    print(f"  expiry={getattr(creds,'expiry',None)}")
     if creds.expired and creds.refresh_token:
         from google.auth.transport.requests import Request
         creds.refresh(Request())
-        print('REFRESHED_OK')
-        with open('youtube_token.pickle','wb') as f:
-            pickle.dump(creds, f)
-        new_b64 = base64.b64encode(open('youtube_token.pickle','rb').read()).decode()
-        print(f'NEW_B64_LEN={len(new_b64)}')
-        print('ACTION: Update YOUTUBE_TOKEN_BASE64 secret with new value above')
-    elif not creds.valid:
-        print('ERROR: invalid and no refresh_token -- need full reauth locally')
+        with open('youtube_token.pickle','wb') as f: pickle.dump(creds,f)
+        print("  TOKEN_REFRESHED=true")
+    elif not creds.valid and not creds.refresh_token:
+        print("  ERROR=token_invalid_no_refresh_reauth_needed")
     else:
-        print('TOKEN_GOOD: No refresh needed')
+        print("  TOKEN_STATUS=valid_ready")
 except Exception as e:
-    print(f'DECODE_ERROR={e}')
-"
+    print(f"  DECODE_ERROR={e}")
+HEREDOC
+          else
+            echo "ERROR: YOUTUBE_TOKEN_BASE64 secret is EMPTY or not set"
+          fi
+
+
       - name: Generate and upload
         run: |
           TOPIC="${{ github.event.inputs.topic }}"
