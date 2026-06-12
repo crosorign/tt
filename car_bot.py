@@ -1867,7 +1867,7 @@ def _tt_font(size, bold=True):
 
 
 
-def generate_thumbnail(title, format_type, output_name):
+def generate_thumbnail(title, format_type, output_name, bg_image_path=None):
     """6 distinct layouts — one per format type."""
     try:
         from PIL import Image, ImageDraw
@@ -1875,7 +1875,19 @@ def generate_thumbnail(title, format_type, output_name):
         os.makedirs(THUMBNAIL_DIR, exist_ok=True)
         W,H=1280,720
         cfg=TT_THUMB_FORMATS.get(format_type, TT_THUMB_FORMATS["default"])
-        img=Image.new("RGB",(W,H),cfg["c1"]); d=ImageDraw.Draw(img)
+        # Photo background if available
+        if bg_image_path and os.path.exists(str(bg_image_path)):
+            try:
+                bg  = Image.open(bg_image_path).convert("RGB").resize((W,H),Image.LANCZOS)
+                bg  = bg.filter(ImageFilter.GaussianBlur(radius=12))
+                bg  = ImageEnhance.Brightness(bg).enhance(0.22)
+                tint= Image.new("RGB",(W,H),cfg["c1"])
+                img = Image.blend(bg, tint, alpha=0.45)
+            except Exception:
+                img=Image.new("RGB",(W,H),cfg["c1"])
+        else:
+            img=Image.new("RGB",(W,H),cfg["c1"])
+        d=ImageDraw.Draw(img)
         def grad(c1=None,c2=None):
             c1=c1 or cfg["c1"]; c2=c2 or cfg["c2"]
             for y in range(H):
@@ -2864,13 +2876,30 @@ def safe_process_video(topic=None, format_type=None, upload=False, privacy="publ
     log("🎨 Generating animated scenes...")
     images = generate_video_scenes(safe_name, topic=topic_val,
                                    scene_type=fmt, num_scenes=6, channel="tt")
-    # Try free media as bonus (Wikimedia + Pixabay + Pexels)
+
+    # Layer 1: Pollinations AI — unique car image per video (free, no API key)
+    log("🎨 Generating AI car image...")
+    poll_path = os.path.join(img_dir, "ai_car.jpg")
+    car_name  = topic_val.split()[0] if topic_val else "Indian SUV"
+    poll_img  = fetch_pollinations_image_tt(car_name, fmt, poll_path)
+    if poll_img:
+        log(f"  🎨 AI car image generated")
+
+    # Layer 2: Existing free media (Wikimedia + Pixabay + Pexels)
     free_imgs = fetch_free_media(topic_val, fmt, img_dir, count=3)
-    if free_imgs:
-        images = free_imgs + images  # real photos first
+
+    # Merge: AI first, then real photos, then scenes
+    real_imgs = []
+    if poll_img: real_imgs.append(poll_img)
+    real_imgs.extend(free_imgs or [])
+    if real_imgs:
+        images = real_imgs + images
     if not images:
         ensure_fallback_image()
         images = ["image.png"] if os.path.exists("image.png") else []
+
+    # Best bg for thumbnail
+    thumb_bg = poll_img or (free_imgs[0] if free_imgs else None)
 
     bgm_path = ensure_bgm(fmt)
 
@@ -2903,9 +2932,15 @@ def safe_process_video(topic=None, format_type=None, upload=False, privacy="publ
     with open(f"{SCRIPTS_DIR}/{safe_name}.txt", "w", encoding="utf-8") as f:
         f.write(f"TOPIC: {topic_val}\nFORMAT: {fmt}\n\n{script}")
 
-    thumb_path = generate_thumbnail(metadata.get("title", topic_val), fmt, safe_name)
+    thumb_path = generate_thumbnail(
+        metadata.get("title", topic_val), fmt, safe_name,
+        bg_image_path=thumb_bg
+    )
     if thumb_path:
         metadata["thumbnail_path"] = thumb_path
+        log(f"  ✅ Thumbnail generated")
+    metadata["duration_seconds"] = 120   # for end screen timing
+    metadata["format"] = fmt             # for playlist routing
 
     meta_data = {
         "topic": topic_val, "format": fmt, "title": metadata.get("title"),
