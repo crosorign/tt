@@ -623,8 +623,34 @@ def fetch_pollinations_image_tt(car_name, format_type, output_path):
 
 
 def add_end_screen_tt(youtube_service, video_id, duration_seconds):
-    """End screens must be added in YouTube Studio UI — API v3 does not support it."""
-    log("  ℹ️ End screen: set manually in YouTube Studio → End screen tab")
+    """Add subscribe + recent video end screen in last 20 seconds."""
+    end_ms = max(0, int(duration_seconds) - 20) * 1000
+    try:
+        youtube_service.videos().update(
+            part="endScreenContent",
+            body={
+                "id": video_id,
+                "endScreenContent": {
+                    "elements": [
+                        {
+                            "type": "SUBSCRIBE",
+                            "position": {"cornerPosition": "TOP_RIGHT", "type": "CORNER"},
+                            "startOffsetMs": str(end_ms),
+                            "durationMs": "20000",
+                        },
+                        {
+                            "type": "RECENT_UPLOAD",
+                            "position": {"cornerPosition": "BOTTOM_LEFT", "type": "CORNER"},
+                            "startOffsetMs": str(end_ms),
+                            "durationMs": "20000",
+                        },
+                    ]
+                }
+            }
+        ).execute()
+        log("  ✅ End screen added")
+    except Exception as e:
+        log(f"  ⚠️ End screen: {e}")
 
 
 TT_PLAYLIST_MAP_CONFIG = {
@@ -1465,43 +1491,62 @@ def build_series_end_card(part_num, series_title, prev_video_id):
 
 
 def get_authenticated_service():
+    """Build YouTube API service with auto scope-refresh."""
+    import pickle, base64, os
+    from google.auth.transport.requests import Request
+    from googleapiclient.discovery import build
+
+    REQUIRED_SCOPES = {
+        "https://www.googleapis.com/auth/youtube",
+        "https://www.googleapis.com/auth/youtube.upload",
+        "https://www.googleapis.com/auth/youtube.force-ssl",
+    }
+
     creds = None
-    b64 = os.environ.get("YOUTUBE_TOKEN_BASE64")
+    b64 = os.environ.get("YOUTUBE_TOKEN_BASE64", "")
+
     if b64:
         try:
             creds = pickle.loads(base64.b64decode(b64))
-        except: pass
+        except Exception as e:
+            log(f"  ⚠️ Token decode failed: {e}")
+            return None
 
-    if not creds and os.path.exists(YOUTUBE_TOKEN_FILE):
-        with open(YOUTUBE_TOKEN_FILE, "rb") as f:
-            creds = pickle.load(f)
+    if not creds:
+        token_file = "youtube_token.pickle"
+        if os.path.exists(token_file):
+            with open(token_file, "rb") as f:
+                creds = pickle.load(f)
 
-    if not creds or not creds.valid:
-        if creds and creds.expired and creds.refresh_token:
-            try:
-                creds.refresh(Request())
-            except Exception as e:
-                log(f"⚠️ Token refresh failed: {e}")
-                return None
-        else:
-            if not os.path.exists(YOUTUBE_CLIENT_SECRETS):
-                log(f"⚠️ {YOUTUBE_CLIENT_SECRETS} not found — skipping upload")
-                return None
-            try:
-                flow = InstalledAppFlow.from_client_secrets_file(
-                    YOUTUBE_CLIENT_SECRETS, YOUTUBE_SCOPES)
-                creds = flow.run_local_server(port=8080)
-            except Exception as e:
-                log(f"⚠️ OAuth flow failed: {e}"); return None
+    if not creds:
+        log("  ⚠️ No YouTube credentials found")
+        return None
+
+    # Refresh if expired
+    if creds.expired and creds.refresh_token:
         try:
-            with open(YOUTUBE_TOKEN_FILE, "wb") as f:
-                pickle.dump(creds, f)
-        except: pass
+            creds.refresh(Request())
+            log("  ✅ Token refreshed")
+        except Exception as e:
+            log(f"  ⚠️ Token refresh failed: {e}")
+            return None
+
+    # Check if force-ssl scope is present (needed for comments)
+    token_scopes = set(getattr(creds, "scopes", []) or [])
+    missing = REQUIRED_SCOPES - token_scopes
+    if "https://www.googleapis.com/auth/youtube.force-ssl" in missing:
+        log("  ℹ️ Token missing youtube.force-ssl — run setup_youtube_secrets.py locally to re-auth")
+        # Still usable for upload, just not comments
+
+    if not creds.valid:
+        log("  ⚠️ Token invalid and cannot be refreshed — re-run auth setup")
+        return None
 
     try:
         return build("youtube", "v3", credentials=creds)
     except Exception as e:
-        log(f"⚠️ YouTube service error: {e}"); return None
+        log(f"  ⚠️ YouTube API build failed: {e}")
+        return None
 
 
 def validate_script(text):
