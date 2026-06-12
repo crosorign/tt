@@ -116,6 +116,39 @@ jobs:
             echo "client_secrets.json restored"
           fi
 
+
+      - name: Debug token validity
+        run: |
+          python3 -c "
+import pickle, os, base64, sys
+b64 = os.environ.get('YOUTUBE_TOKEN_BASE64', '')
+print(f'TOKEN_B64_LEN={len(b64)}')
+if not b64:
+    print('ERROR: YOUTUBE_TOKEN_BASE64 is EMPTY')
+    sys.exit(0)
+try:
+    creds = pickle.loads(base64.b64decode(b64))
+    print(f'type={type(creds).__name__}')
+    print(f'valid={creds.valid}')
+    print(f'expired={creds.expired}')
+    print(f'has_refresh={bool(creds.refresh_token)}')
+    print(f'expiry={creds.expiry}')
+    if creds.expired and creds.refresh_token:
+        from google.auth.transport.requests import Request
+        creds.refresh(Request())
+        print('REFRESHED_OK')
+        with open('youtube_token.pickle','wb') as f:
+            pickle.dump(creds, f)
+        new_b64 = base64.b64encode(open('youtube_token.pickle','rb').read()).decode()
+        print(f'NEW_B64_LEN={len(new_b64)}')
+        print('ACTION: Update YOUTUBE_TOKEN_BASE64 secret with new value above')
+    elif not creds.valid:
+        print('ERROR: invalid and no refresh_token -- need full reauth locally')
+    else:
+        print('TOKEN_GOOD: No refresh needed')
+except Exception as e:
+    print(f'DECODE_ERROR={e}')
+"
       - name: Generate and upload
         run: |
           TOPIC="${{ github.event.inputs.topic }}"
