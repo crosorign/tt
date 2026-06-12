@@ -2237,6 +2237,37 @@ def upload_pending_from_queue():
         log(f"  ⚠️ Queue processing failed: {e}")
 
 
+
+def fix_chapter_timestamps(description, duration_seconds):
+    """Scale chapter timestamps to fit actual video duration."""
+    import re
+    lines = description.split('\n')
+    chapter_lines = [(i, l) for i, l in enumerate(lines)
+                     if re.match(r'^\d+:\d+', l.strip())]
+    if not chapter_lines or duration_seconds < 30:
+        return description
+    # Find last chapter timestamp and scale all proportionally
+    def ts_to_sec(ts):
+        parts = ts.strip().split(':')
+        return int(parts[0])*60 + int(parts[1]) if len(parts)==2 else 0
+    def sec_to_ts(s):
+        return f"{int(s)//60}:{int(s)%60:02d}"
+    last_ts = max(ts_to_sec(re.match(r'^(\d+:\d+)', l.strip()).group(1))
+                  for _, l in chapter_lines
+                  if re.match(r'^(\d+:\d+)', l.strip()))
+    if last_ts == 0:
+        return description
+    scale = (duration_seconds - 5) / last_ts if last_ts > 0 else 1.0
+    new_lines = list(lines)
+    for i, l in chapter_lines:
+        m = re.match(r'^(\d+:\d+)(.*)', l.strip())
+        if m:
+            orig_sec = ts_to_sec(m.group(1))
+            new_sec  = min(int(orig_sec * scale), duration_seconds - 3)
+            new_lines[i] = sec_to_ts(new_sec) + m.group(2)
+    return '\n'.join(new_lines)
+
+
 def upload_to_youtube(video_path, metadata, privacy="public"):
     if not os.path.exists(video_path):
         log(f"❌ Video not found: {video_path}"); return None
