@@ -475,12 +475,18 @@ def save_queue(q):
 USED_TOPICS_FILE = "used_topics.txt"
 
 
-def load_recent_topics(n=20):
+def load_recent_topics(n=30):
     topics = []
     if os.path.exists(USED_TOPICS_FILE):
         with open(USED_TOPICS_FILE, encoding="utf-8") as f:
             lines = [l.strip() for l in f.readlines() if l.strip()]
-        topics = lines[-n:]
+        # Auto-dedupe
+        seen_keys = set(); deduped = []
+        for l in lines:
+            k = l[:40].lower().strip()
+            if k not in seen_keys:
+                seen_keys.add(k); deduped.append(l)
+        topics = deduped[-n:]
     if not topics and os.path.isdir(METADATA_DIR):
         files = sorted(Path(METADATA_DIR).glob("*.json"), reverse=True)[:n]
         for fp in files:
