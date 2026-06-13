@@ -756,7 +756,8 @@ def fetch_pexels_images(keyword, output_dir, count=5):
             resp = requests.get(
                 "https://api.pexels.com/v1/search",
                 headers=headers,
-                params={"query": query, "per_page": 3, "orientation": "landscape"},
+                params={"query": query, "per_page": 5, "orientation": "landscape",
+                "page": __import__("random").randint(1, 4)},
                 timeout=15
             )
             if resp.status_code != 200:
@@ -2650,6 +2651,14 @@ def fetch_free_media(topic, format_type, output_dir, count=5):
             "news": "car india", "launch": "car showroom",
             "comparison": "cars road", "explainer": "car dashboard",
         }.get(format_type, "car india")
+    # Override with topic-specific car model for more relevant images
+    import re as _re_tt
+    _car_match = _re_tt.search(
+        r"\b(Tata|Maruti|Hyundai|Kia|Mahindra|Toyota|Honda|Skoda|MG|Nexon|Creta|Seltos|Punch|Brezza|Safari|Harrier|XUV|Scorpio|Innova|Fortuner)\b",
+        topic_val, _re_tt.IGNORECASE)
+    if _car_match:
+        pexels_kw = _car_match.group(1).lower() + " car india"
+
         pexels_images = fetch_pexels_images(pexels_kw, output_dir,
                                              count=count - len(all_images))
         all_images.extend(pexels_images)
