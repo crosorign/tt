@@ -17,6 +17,10 @@ on:
         description: "Slot: morning/evening"
         required: false
         default: "morning"
+      long_form:
+        description: "Long-form mode: yes/no/auto"
+        required: false
+        default: "auto"
       upload:
         description: "Upload to YouTube? yes/no"
         required: false
@@ -128,6 +132,7 @@ jobs:
           TOPIC="${{ github.event.inputs.topic }}"
           FORMAT="${{ github.event.inputs.format }}"
           UPLOAD="${{ github.event.inputs.upload }}"
+          LONG_FORM="${{ github.event.inputs.long_form }}"
           SLOT="${{ steps.slot.outputs.slot }}"
           PREFERRED="${{ steps.slot.outputs.preferred_formats }}"
 
@@ -141,6 +146,11 @@ jobs:
           fi
           if [ -n "$FORMAT" ]; then
             CMD="$CMD --format $FORMAT"
+          fi
+          if [ "$LONG_FORM" = "yes" ]; then
+            CMD="$CMD --long-form"
+          elif [ "$LONG_FORM" = "auto" ] || [ "$SLOT" = "evening" ]; then
+            CMD="$CMD --auto-long-form"
           fi
           if [ -f youtube_token.pickle ] && [ "${UPLOAD}" != "no" ]; then
             CMD="$CMD --upload"

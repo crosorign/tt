@@ -1,21 +1,19 @@
 # Tech Meets Travel — Car News Automation Bot
 
-Fully automated YouTube channel for Indian car news. Daily 2-minute videos.
+Fully automated YouTube channel for global + Indian car and EV news. Hybrid video lengths: ~2 min daily shorts by default, 5–8 min long-form for high-score stories.
 
 ## Channel: [@tech_meets_travel](https://www.youtube.com/@tech_meets_travel)
 
 ## What this bot does
 
 Twice daily (7 AM & 7 PM IST):
-1. Scrapes Indian car news (Autocar, CarDekho, Zigwheels)
-2. LLM picks best topic for today's audience
-3. Generates 2-min English script (220-280 words)
-4. Fetches relevant Pexels car images
-5. Generates voiceover (male/female based on format)
-6. Creates professional video with Ken Burns, transitions, text overlays
-7. Burns English subtitles into video
-8. Uploads to YouTube with SEO metadata + pinned comment
-9. Generates YouTube Shorts version (40s vertical)
+1. Scrapes car news and trending searches
+2. LLM picks the highest-potential story (Tesla/BYD/global EV + Indian launches)
+3. Scores monetization potential and selects short vs long video mode
+4. Generates script-aware content package (titles, Shorts script, tags, keywords, chapters)
+5. Fetches topic-relevant stock images via search queries
+6. Creates main video (Ken Burns, subtitles, overlays) + dedicated vertical Short
+7. Uploads to YouTube with SEO metadata, AI disclosure, pinned comment, custom thumbnail
 
 ## Setup
 
@@ -33,71 +31,65 @@ export GROQ_API_KEY="your_key"        # console.groq.com
 export PEXELS_API_KEY="your_key"      # pexels.com/api
 ```
 
+Optional: add royalty-free MP3 files to `assets/bgm/{format}.mp3` (news, launch, ev, etc.) for better background music.
+
 ### 3. YouTube OAuth (one time)
 ```bash
-# Place client_secrets.json from Google Cloud Console
 python3 setup_youtube_secrets.py
-
-# Encode token for GitHub Actions
 base64 -w 0 youtube_token.pickle
-# → Copy output → GitHub Secrets → YOUTUBE_TOKEN_BASE64
+# → GitHub Secrets → YOUTUBE_TOKEN_BASE64
 ```
-
-### 4. GitHub Secrets to set
-| Secret | Value |
-|--------|-------|
-| `GEMINI_KEY` | Gemini API key |
-| `GROQ_API_KEY` | Groq API key |
-| `PEXELS_API_KEY` | Pexels API key |
-| `YOUTUBE_TOKEN_BASE64` | base64 of youtube_token.pickle |
-| `CLIENT_SECRETS_BASE64` | base64 of client_secrets.json |
 
 ## Usage
 
 ```bash
-# Auto topic (LLM decides)
-python3 car_bot.py --day today
-
-# Auto topic + upload
+# Default: ~2 min short video
 python3 car_bot.py --day today --upload
 
+# Force 5–8 min long-form
+python3 car_bot.py --day today --upload --long-form
+
+# Auto long-form when monetization score >= 7 (evening CI slot)
+python3 car_bot.py --day today --upload --auto-long-form
+
 # Custom topic
-python3 car_bot.py --topic "Tata Harrier EV launch price revealed"
-
-# Custom topic + format
-python3 car_bot.py --topic "Thar vs Scorpio" --format comparison
-
-# 24/7 daemon
-python3 car_bot.py --daemon
+python3 car_bot.py --topic "BYD Seal vs Tesla Model 3" --format comparison --upload
 ```
+
+## Video modes
+
+| Mode | Length | Words | Trigger |
+|------|--------|-------|---------|
+| `short` | ~2 min | 280–340 | Default (morning slot) |
+| `long` | 5–8 min | 750–1200 | `--long-form` or score ≥ 7 + tier 1–2 |
 
 ## Content formats
 
-| Format | Voice | BGM mood | Use case |
-|--------|-------|----------|----------|
-| `news` | Male | Energetic modern | Breaking car news, price announcements |
-| `launch` | Male | Exciting reveal | New car launch details |
-| `comparison` | Female | Analytical neutral | Side-by-side car comparison |
-| `explainer` | Male | Calm informative | How ADAS, hybrid tech works |
-| `ev` | Female | Futuristic tech | Electric vehicle deep dives |
-| `suv` | Male | Powerful bold | SUV news and offroad content |
+| Format | Voice | Use case |
+|--------|-------|----------|
+| `news` | Male | Breaking car news |
+| `launch` | Male | New model reveals |
+| `comparison` | Female | Head-to-head picks |
+| `explainer` | Male | Tech explained simply |
+| `ev` | Female | EV deep dives |
+| `suv` | Male | SUV news |
 
 ## Output per video
 
 ```
-videos/          → full 2-min video (1920×1080)
-shorts/          → 40s vertical clip (1080×1920)
+videos/          → main video (1920×1080)
+shorts/          → dedicated 45–60s vertical Short
 subtitles/       → English subtitle file
-scripts/         → script text
-metadata/        → title, description, tags JSON
-thumbnails/      → branded thumbnail PNG
+scripts/         → full script text
+metadata/        → expanded JSON (titles, keywords, chapters, short_script, etc.)
+thumbnails/      → CTR-optimized thumbnail PNG
 ```
 
 ## Automation schedule
 
-| Time IST | Content |
-|----------|---------|
-| 7:00 AM | Morning news video (auto upload) |
-| 7:00 PM | Evening format video (comparison/explainer/suv) |
+| Time IST | Slot | Mode |
+|----------|------|------|
+| 7:00 AM | Morning | Short (fast daily news) |
+| 7:00 PM | Evening | `--auto-long-form` when story scores high |
 
-Both run via GitHub Actions scheduled triggers.
+Both run via GitHub Actions (`.github/workflows/daily.yml`).

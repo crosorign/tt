@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
-Tech Meets Travel — CAR NEWS AUTOMATION BOT v1.3
-Fully automated YouTube channel for Indian car news.
-Daily 2-min videos · English · Auto upload · GitHub Actions
+Tech Meets Travel — CAR NEWS AUTOMATION BOT v2.0
+Fully automated YouTube channel for global + Indian car news.
+Hybrid videos: ~2 min default, 5–8 min long-form for high-score stories.
 
 Usage:
   python car_bot.py --day today
@@ -104,6 +104,14 @@ CHANNEL_HANDLE = "@tech_meets_travel"
 
 TARGET_MIN_WORDS = 280
 TARGET_MAX_WORDS = 340
+TARGET_MIN_WORDS_LONG = 750
+TARGET_MAX_WORDS_LONG = 1200
+LONG_FORM_SCORE_THRESHOLD = 7.0
+VIDEO_FPS = 30
+AI_DISCLOSURE = (
+    "\n\n🤖 Content created with AI assistance for informational purposes."
+)
+BGM_DIR = "assets/bgm"
 
 VOICE_FEMALE = "en-IN-NeerjaNeural"   # Indian English female
 VOICE_MALE   = "en-IN-PrabhatNeural"  # Indian English male
@@ -239,126 +247,142 @@ CONTENT_FORMAT_TYPES = [
     "suv",
 ]
 
-DAILY_TOPIC_PROMPT = """You are a content strategist for "Tech Meets Travel" — India's sharpest car news YouTube channel.
+MASTER_SYSTEM_PROMPT = """You are an expert automotive journalist, EV analyst, YouTube strategist, and viral content creator for "Tech Meets Travel".
+
+Coverage (global + India blend — prioritize in this order):
+1. Tesla, BYD, global EV, battery tech, charging, autonomous driving
+2. Tata EV, Mahindra EV, Hyundai, Kia, MG Motor
+3. Indian launches, comparisons, buyer advice when globally relevant
+
+Audience: car enthusiasts, EV buyers, first-time buyers, tech enthusiasts, EV investors.
+
+Rules: factually accurate, engaging, easy to understand, SEO optimized, monetization friendly, global-friendly English. Never use misleading clickbait.
+"""
+
+DAILY_TOPIC_PROMPT = """{master_prompt}
+
+You are selecting today's highest-potential story for a YouTube car news channel.
 
 TODAY: {date} | {day}
 FRESH CAR NEWS: {car_news}
 TRENDING SEARCHES: {trends}
 RECENTLY USED TOPICS — DO NOT repeat similar themes: {recent_topics}
 
-MANDATORY CATEGORY ROTATION — pick the category most underrepresented in recent topics:
-A) LAUNCH NEWS — brand new model reveal, price announcement, booking open
-B) REAL BUYER ADVICE — which variant to buy, should you wait, honest pick
-C) COMPARISON — two specific cars head to head with a clear winner
-D) SURPRISING FACT — something most people get wrong about a popular car
-E) MARKET TREND — sales data with an interesting story behind the numbers
-F) EV REALITY — real-world range, charging, cost vs petrol, honest verdict
+STORY PRIORITY (pick the story most likely to generate views):
+1. Tesla / BYD / global EV breakthroughs
+2. Battery technology / charging infrastructure
+3. Tata EV / Mahindra EV / major Indian EV launches
+4. Hyundai / Kia / MG launches and comparisons
+5. Indian market trends with a surprising angle
 
-CURIOSITY HOOK RULES (pick one that makes someone stop scrolling):
-- A shocking number: "₹4 lakh cheaper", "40% more range", "outsells Creta by 2x"  
-- A contrarian take: "Why I'd AVOID the top variant", "This car is NOT what the ads show"
-- A hidden fact: "The one thing Maruti doesn't tell you about the Swift", "Why dealers prefer this model"
-- An urgent decision: "Buy before June 30 or lose ₹50,000 — here's why"
+CATEGORY ROTATION — pick the most underrepresented:
+A) LAUNCH NEWS  B) BUYER ADVICE  C) COMPARISON  D) SURPRISING FACT  E) MARKET TREND  F) EV REALITY
 
-TOPIC MUST be hyper-specific. NOT "Tata EV review" but "Tata Curvv EV: Why the ₹17.49L base is the only smart choice"
+TOPIC must be hyper-specific with numbers, price, or a surprising angle.
+Suggest video_mode "long" only for Tier 1–2 stories with monetization_score.total >= 7.
 
 Return ONLY valid JSON:
 {{
-  "topic": "<specific, curiosity-driving topic with a number or surprising angle>",
+  "topic": "<specific curiosity-driving topic>",
   "format": "<news|launch|comparison|explainer|ev|suv>",
   "category": "<A|B|C|D|E|F>",
+  "priority_tier": <1|2|3>,
+  "video_mode": "<short|long>",
   "pexels_keyword": "<car|suv|electric car|highway india|concept car>",
-  "hook_angle": "<the single most surprising fact that will make someone click>",
-  "reason": "<one sentence: what makes this different from yesterday's content>"
+  "hook_angle": "<single most surprising fact>",
+  "reason": "<why this story today>",
+  "news_summary": {{
+    "what": "<what happened>",
+    "why_matters": "<why it matters>",
+    "specs": "<key specs if known>",
+    "price": "<price if known, else empty>",
+    "timeline": "<launch timeline if known, else empty>",
+    "source": "<Autocar India|CarDekho|Manufacturer|Reuters|etc>"
+  }},
+  "monetization_score": {{
+    "viral": <1-10>,
+    "search": <1-10>,
+    "cpm": <1-10>,
+    "sponsor": <1-10>,
+    "total": <average 1-10>
+  }},
+  "title_candidates": ["<20 title options under 70 chars>"],
+  "image_search_queries": ["<5-10 specific image search queries>"],
+  "broll_queries": ["<3-5 b-roll search queries>"]
 }}
 """
 
 
-SCRIPT_PROMPT = """You are a sharp, witty Indian car journalist who runs "Tech Meets Travel" on YouTube.
-Think: the guy your friends call before buying a car. Knowledgeable, opinionated, fun.
-NOT a robot reading specs. A real person who loves cars and talks like it.
+SCRIPT_PROMPT_SHORT = """{master_prompt}
+
+You are a sharp, witty automotive journalist who runs "Tech Meets Travel" on YouTube.
+Think: the friend your audience calls before buying a car. Knowledgeable, opinionated, fun.
 
 Topic: {topic}
 Format: {format_type}
 Hook: {hook_angle}
 Voice: {voice_gender}
 
-━━━━━━━━━━━━━━━━━━━━━━━━━
-PERSONALITY (this is what makes people subscribe):
-- Talk like you're WhatsApp-voicing your car-obsessed friend
-- Use natural Indian English: "yaar", "basically", "trust me", "here's the thing"
-- Have opinions: "This is actually good value" or "Honestly? I'd wait for the next variant"
-- React to the news: "And wait, it gets better..." or "But here's the catch..."
-- Use comparisons Indians understand: "cheaper than a base Creta", "same range as Nexon EV"
-
-VIDEO STRUCTURE (2 minutes, 4 beats):
+VIDEO STRUCTURE (~2 minutes, 4 beats):
 
 BEAT 1 — OPEN WITH THE MONEY SHOT (15 seconds)
 Start with the single most interesting fact. No intro, no "today we", no "hi guys".
-Hit them immediately with what matters most.
-Examples:
-  "Tata just dropped the Harrier EV price — and it's ₹3 lakhs less than everyone predicted."
-  "Mahindra Scorpio-N gets a mid-life update and honestly? They fixed the one thing everyone complained about."
-  "Real world range of the Nexon EV: we drove it 247 km on one charge. Here's what happened."
 
 BEAT 2 — THE FULL STORY (60 seconds)
-Give everything they came for. Specific, real numbers. No vague "powerful engine" — say "170 bhp and 380 Nm".
-Cover: price (variant-wise if possible), key specs, what's new, launch date, how to book.
-Slip in one comparison: "For context, the base XUV700 starts at ₹13.99 lakh — this undercuts it by ₹80k."
-End Beat 2 with a teaser: "But there's one more thing Tata announced — and I think it changes everything."
+Specific numbers: price, specs, launch date, competition context.
 
-BEAT 3 — YOUR HONEST TAKE (25 seconds)  
-This is why people watch YOU instead of reading CarDekho.
-Should they buy it? Should they wait? Which variant? Why?
-Be specific: "The mid variant at ₹18.5 lakh is the sweet spot — avoid the top spec unless you really need the panoramic roof."
-Or: "Honestly I'd wait 6 months for the first batch quality issues to get sorted."
+BEAT 3 — YOUR HONEST TAKE (25 seconds)
+Should they buy, wait, or skip? Which variant?
 
 BEAT 4 — CLOSE NATURALLY (10 seconds)
-Don't beg. Ask a real question that makes them comment.
-"Which would you pick — Harrier EV or MG ZS EV? Drop it in the comments."
-OR: "If you want the full spec breakdown video — comment 'specs' below and I'll make it."
+End with a comment-driving question.
 
-━━━━━━━━━━━━━━━━━━━━━━━━━
 FORMAT-SPECIFIC TONE:
+news: urgent and direct | launch: excited but grounded | comparison: pick a winner
+explainer: patient with analogies | ev: tech-forward but realistic | suv: bold and practical
 
-news:       Urgent, direct. Lead with the breaking detail. "This just happened — here's what it means for you."
-launch:     Excited but grounded. Cover specs AND real-world usability.
-comparison: Pick a winner. Don't sit on the fence — "Look, if it were my money, I'm going Mahindra."
-explainer:  Patient but never boring. Use analogies. "Think of regenerative braking like a bicycle dynamo but for your battery."
-ev:         Enthusiastic about tech, realistic about range anxiety. Address India-specific EV concerns.
-suv:        Bold. Talk about road presence, ground clearance, off-road capability for Indian roads.
-
-━━━━━━━━━━━━━━━━━━━━━━━━━
 HARD RULES:
-1. {target_min_words}-{target_max_words} words (2-min video at natural pace)
-2. ZERO markdown — no asterisks, no headers, no bullets — pure speech
-3. ZERO filler: "In this video", "As I mentioned", "Without further ado" = instantly cut
-4. Real numbers every time — never "affordable" without the actual price
-5. Never say "I" more than 8 times — talk about THEM (the viewer) and the CAR
-6. End every Beat with a micro-hook that pulls into the next beat
-7. NO [BEAT 1] labels — just write the speech straight through
-8. NEVER start with the car brand name. Start with the IMPACT or SURPRISE.
-   BAD: "Tata has launched..." GOOD: "₹3 lakhs less than everyone expected — Tata just made a big move."
-9. ONE surprising/counterintuitive fact per video. Something viewer cannot get from just reading a headline.
-10. The LAST sentence must be a question that triggers comments: "Tata or Mahindra — drop your pick below."
-11. TONE EXAMPLES (write exactly like this, not formal):
-    GOOD: "Look yaar, Maruti has been playing it safe for too long. The new Swift? Nice car. But here's the thing — at ₹9 lakh you're one variant away from a Nexon. And I know which one I'd pick."
-    GOOD: "Honest take? The base variant. Skip the top spec. That panoramic roof costs you ₹1.5 lakh and adds zero to the driving experience on Indian roads."
-    BAD: "The vehicle offers impressive specifications including advanced safety features."
-    BAD: "This automobile presents exceptional value proposition for Indian consumers."
+1. {target_min_words}-{target_max_words} words
+2. ZERO markdown — pure speech
+3. Real numbers every time — never vague "affordable"
+4. Never start with the brand name — start with impact
+5. ONE surprising fact the headline alone cannot give
+6. LAST sentence must be a comment question
 
-PAUSE MARKERS — mandatory for human-sounding narration:
-- After opening money shot:      [PAUSE_LONG]
-- After key price/spec reveal:   [PAUSE_SHORT]
-- Before "But here's the thing": [PAUSE_MED]
-- Between beats:                 [PAUSE_LONG]
-- After "And wait, it gets better": [PAUSE_MED]
-
-Example:
-"Tata just dropped the Harrier EV price by ₹3 lakhs. [PAUSE_LONG]
-That's cheaper than a base Creta now. [PAUSE_SHORT]
-But here's what nobody's talking about... [PAUSE_LONG]"
+PAUSE MARKERS — mandatory:
+[PAUSE_LONG] after money shot and between beats | [PAUSE_MED] before twists | [PAUSE_SHORT] after key specs
 """
+
+SCRIPT_PROMPT_LONG = """{master_prompt}
+
+You are a professional automotive journalist and top YouTube creator for "Tech Meets Travel".
+
+Topic: {topic}
+Format: {format_type}
+Hook: {hook_angle}
+Voice: {voice_gender}
+
+VIDEO STRUCTURE (5–8 minutes):
+
+HOOK (0–15 sec) — strongest attention-grabbing opening, no greeting filler
+INTRODUCTION — why this news matters globally and for Indian buyers
+MAIN STORY — key details, features, specs, performance, pricing, competition
+INDUSTRY IMPACT — market, consumer, and future implications
+FINAL VERDICT — exciting or disappointing, and why
+CTA — natural like/subscribe/comment ask
+
+HARD RULES:
+1. {target_min_words}-{target_max_words} words
+2. ZERO markdown — pure speech
+3. Real numbers, dates, and specs throughout
+4. Global context + India relevance where applicable
+5. Conversational but authoritative — not a spec sheet robot
+6. End with an engaging comment question
+
+PAUSE MARKERS — use [PAUSE_LONG], [PAUSE_MED], [PAUSE_SHORT] at section transitions and key reveals.
+"""
+
+SCRIPT_PROMPT = SCRIPT_PROMPT_SHORT
 
 SUBTITLE_PROMPT = """You are a professional subtitle editor.
 
@@ -435,17 +459,49 @@ ENGAGEMENT HOOKS (add naturally in script):
 - Share: "Tag a friend who's thinking of buying this car."
 """
 
-THUMBNAIL_PROMPT = """Create a detailed AI image generation prompt for a YouTube thumbnail.
-Channel: Tech Meets Travel (Indian Car News)
+CONTENT_PACKAGE_PROMPT = """{master_prompt}
+
+Generate the full YouTube content package for this video.
+
 Topic: {topic}
 Format: {format_type}
-Thumbnail concept: {thumbnail_concept}
+Hook: {hook_angle}
+Video mode: {video_mode}
+News summary: {news_summary}
 
-Return a detailed prompt:
-- Professional automotive visual
-- Bold text overlay space
-- High contrast for small size
-- Indian context when relevant
+SCRIPT (for alignment — description and chapters must match this):
+{script}
+
+Return ONLY valid JSON:
+{{
+  "title_candidates": ["<20 titles under 70 chars, curiosity + SEO>"],
+  "title": "<best single title under 60 chars>",
+  "thumbnail_headline": "<max 4 words, high CTR, ALL CAPS ok>",
+  "thumbnail_concept": "<visual concept for thumbnail background>",
+  "short_title": "<Shorts title under 70 chars>",
+  "short_script": "<45-60 second Shorts script, fast hook + one key fact + CTA>",
+  "description": "<300-word SEO description with summary, keywords, CTA>",
+  "tags": "<30 comma-separated YouTube tags>",
+  "keywords": "<50 comma-separated SEO keywords>",
+  "pinned_comment": "<2-option engagement question>",
+  "community_post": "<YouTube community post asking viewer opinion>",
+  "future_video_ideas": ["<20 related video ideas>"]
+}}
+
+Include AI disclosure is NOT needed in description — added automatically at upload.
+First 2 description lines must hook search snippets. Tags: high-volume + model + buying-intent + trending.
+"""
+
+SHORT_SCRIPT_PROMPT = """{master_prompt}
+
+Write a 45–60 second YouTube Shorts script for this car news topic.
+
+Topic: {topic}
+Hook: {hook_angle}
+Main script excerpt: {script_excerpt}
+
+Rules: instant hook in first 3 seconds, one killer fact, why it matters, comment CTA.
+80-120 words. Pure speech. Include [PAUSE_SHORT] and [PAUSE_MED] markers. No markdown.
 """
 
 KB_PRESETS = [
@@ -798,11 +854,16 @@ def ensure_fallback_image():
 
 
 def ensure_bgm(format_type="default"):
-    profile = BGM_PROFILES.get(format_type, BGM_PROFILES["default"])
+    os.makedirs(BGM_DIR, exist_ok=True)
+    cached_bgm = os.path.join(BGM_DIR, f"{format_type}.mp3")
+    if os.path.exists(cached_bgm):
+        return cached_bgm
+
     bgm_path = f"bgm_{format_type}.mp3"
     if os.path.exists(bgm_path):
         return bgm_path
 
+    profile = BGM_PROFILES.get(format_type, BGM_PROFILES["default"])
     log(f"🎵 Generating BGM: {profile['mood']} ({profile['freq']}Hz)...")
     f1, f2 = profile["freq"], profile["freq2"]
     r = run([
@@ -820,9 +881,8 @@ def ensure_bgm(format_type="default"):
     if r.returncode == 0:
         log(f"  ✅ BGM: {bgm_path}")
         return bgm_path
-    else:
-        log("  ⚠️ BGM generation failed")
-        return BGM_FILE if os.path.exists(BGM_FILE) else None
+    log("  ⚠️ BGM generation failed")
+    return None
 
 
 def generate_srt(english_lines, total_duration, output_path):
@@ -988,7 +1048,7 @@ def concat_clips(clips, output_path):
     return r.returncode == 0
 
 
-def build_video_filter(images, total_frames, fps=25, seed=0):
+def build_video_filter(images, total_frames, fps=VIDEO_FPS, seed=0):
     rng = random.Random(seed)
     num = len(images)
     seg_frames = total_frames // num
@@ -1102,7 +1162,7 @@ def create_video(script_text, english_subtitles, images_input, output_name,
         log("❌ No images"); return None
 
     log(f"  Using {len(images)} images")
-    fps = 25
+    fps = VIDEO_FPS
     seed = int(hashlib.md5(output_name.encode()).hexdigest()[:8], 16)
     total_frames = max(int(total_dur * fps), fps * 5)
     num_inputs, vfilter, vlabel = build_video_filter(images, total_frames, fps, seed)
@@ -1128,34 +1188,45 @@ def create_video(script_text, english_subtitles, images_input, output_name,
         if r.returncode != 0:
             log("❌ Video encoding failed"); return None
 
-    log("✍️  Step 5/7 Text overlays...")
+    log("✍️  Step 5/7 Text overlays + subtitles...")
     overlay_filter = build_text_overlay(title_short, format_type)
-    r = run(["ffmpeg", "-y", "-i", raw_file,
-             "-vf", overlay_filter,
-             "-c:v", "libx264", "-preset", "veryfast", "-crf", "20",
-             "-c:a", "copy", "-movflags", "+faststart", overlay_file], timeout=200)
-    working = overlay_file if r.returncode == 0 else raw_file
-
-    log("📝 Step 6/7 English subtitles...")
+    combined_vf = overlay_filter
     srt_created = False
     if english_subtitles:
         srt_path = generate_srt(english_subtitles, total_dur, srt_file)
         if srt_path:
-            r = run(["ffmpeg", "-y", "-i", working,
-                     "-vf", f"subtitles={srt_path}:force_style='"
-                            "FontName=Arial,FontSize=28,"
-                            "PrimaryColour=&H00FFFFFF,"
-                            "OutlineColour=&H00000000,"
-                            "BackColour=&H80000000,"
-                            "Bold=1,Outline=3,Shadow=1,"
-                            "Alignment=2,MarginV=60'",
+            combined_vf = (
+                f"{overlay_filter},subtitles={srt_path}:force_style='"
+                "FontName=Arial,FontSize=28,"
+                "PrimaryColour=&H00FFFFFF,"
+                "OutlineColour=&H00000000,"
+                "BackColour=&H80000000,"
+                "Bold=1,Outline=3,Shadow=1,"
+                "Alignment=2,MarginV=60'"
+            )
+            r = run(["ffmpeg", "-y", "-i", raw_file,
+                     "-vf", combined_vf,
                      "-c:v", "libx264", "-preset", "medium", "-crf", "20",
-                     "-c:a", "copy", "-movflags", "+faststart", video_file], timeout=200)
+                     "-c:a", "copy", "-movflags", "+faststart", overlay_file], timeout=240)
             if r.returncode == 0:
                 srt_created = True
-                log("  ✅ Subtitles burned in")
+                working = overlay_file
+                log("  ✅ Overlays + subtitles burned in (single pass)")
+            else:
+                working = raw_file
+        else:
+            working = raw_file
+    else:
+        working = raw_file
+
     if not srt_created:
-        shutil.copy(working, video_file)
+        r = run(["ffmpeg", "-y", "-i", raw_file,
+                 "-vf", overlay_filter,
+                 "-c:v", "libx264", "-preset", "veryfast", "-crf", "20",
+                 "-c:a", "copy", "-movflags", "+faststart", overlay_file], timeout=200)
+        working = overlay_file if r.returncode == 0 else raw_file
+
+    shutil.copy(working, video_file)
 
     log("🔤 Step 7/8 Source citation + hook overlay...")
     combined_file = f"/tmp/{output_name}_combined.mp4"
@@ -1240,38 +1311,193 @@ def create_video(script_text, english_subtitles, images_input, output_name,
             if os.path.exists(f): os.remove(f)
         except: pass
 
-    log("📱 Step 8/8 Shorts...")
-    _vf = (
-        "[0:v]split=2[bg][fg];"
-        "[bg]scale=1080:1920:force_original_aspect_ratio=increase,"
-        "crop=1080:1920,boxblur=25:5[blurred];"
-        "[fg]scale=1080:607,"
-        "pad=1080:1920:0:(1920-607)/2:black[padded];"
-        "[blurred][padded]overlay=0:(H-h)/2"
-    )
-    _r = run(["ffmpeg", "-y", "-i", video_file, "-ss", "0", "-t", "55",
-              "-vf", _vf, "-c:v", "libx264", "-preset", "veryfast", "-crf", "26",
-              "-c:a", "aac", "-b:a", "128k", "-movflags", "+faststart",
-              short_file], timeout=180)
-    if _r.returncode != 0:
-        run(["ffmpeg", "-y", "-i", video_file, "-ss", "0", "-t", "55",
-             "-vf", "scale=1080:1920:force_original_aspect_ratio=decrease,"
-                    "pad=1080:1920:(ow-iw)/2:(oh-ih)/2:black",
-             "-c:v", "libx264", "-preset", "veryfast", "-crf", "26",
-             "-c:a", "aac", short_file], timeout=180)
+    log("📱 Shorts clip deferred to create_short_video()")
+    total_dur = get_dur(video_file)
 
     mb = os.path.getsize(video_file) / (1024*1024)
-    log(f"  ✅ {video_file} ({mb:.1f}MB)")
+    log(f"  ✅ {video_file} ({mb:.1f}MB, {total_dur:.1f}s)")
 
     for f in [script_file, voice_file, human_file, mixed_file, raw_file, overlay_file]:
         try:
             if os.path.exists(f): os.remove(f)
         except: pass
 
-    return video_file
+    return video_file, total_dur
 
 
-def discover_daily_config():
+def create_short_video(short_script, images_input, output_name, format_type="default",
+                       hook_headline="", bgm_path=None):
+    """Vertical-native Short from dedicated short script."""
+    ensure_dirs()
+    if not short_script or not short_script.strip():
+        return None
+
+    script_file = f"/tmp/{output_name}_short_script.txt"
+    voice_file = f"/tmp/{output_name}_short_voice.mp3"
+    human_file = f"/tmp/{output_name}_short_human.mp3"
+    raw_file = f"/tmp/{output_name}_short_raw.mp4"
+    short_file = f"{SHORTS_DIR}/{output_name}_short.mp4"
+
+    script_text = inject_pauses(short_script)
+    with open(script_file, "w", encoding="utf-8") as script_handle:
+        script_handle.write(script_text)
+
+    gender, voice_id, eq_filter = VOICE_ASSIGNMENT.get(
+        format_type, VOICE_ASSIGNMENT["default"])
+    log(f"📱 Creating Short ({gender} voice)...")
+    run(["edge-tts", "--file", script_file, "--voice", voice_id,
+         "--rate=" + RATE_BY_FORMAT_TT.get(format_type, "-8%"),
+         "--pitch=+0Hz", "--write-media", voice_file], timeout=180)
+    if not os.path.exists(voice_file):
+        return None
+
+    run(["ffmpeg", "-y", "-i", voice_file, "-af", eq_filter, human_file], timeout=120)
+    audio = human_file if os.path.exists(human_file) else voice_file
+    total_dur = min(get_dur(audio), 60.0)
+
+    images = [img for img in (images_input or []) if os.path.exists(img)][:4]
+    if not images and os.path.exists("image.png"):
+        images = ["image.png"]
+    if not images:
+        return None
+
+    fps = VIDEO_FPS
+    total_frames = max(int(total_dur * fps), fps * 5)
+    num_inputs, vfilter, vlabel = build_video_filter(images, total_frames, fps, seed=42)
+
+    cmd = ["ffmpeg", "-y"]
+    for img in images:
+        cmd.extend(["-loop", "1", "-t", str(total_dur + 1), "-i", img])
+    cmd.extend(["-i", audio, "-filter_complex", vfilter,
+                "-map", f"[{vlabel}]", "-map", f"{num_inputs}:a",
+                "-c:v", "libx264", "-preset", "veryfast", "-crf", "22",
+                "-pix_fmt", "yuv420p", "-c:a", "aac", "-t", str(total_dur),
+                raw_file])
+    run(cmd, timeout=300)
+
+    safe_hook = (hook_headline or "CAR NEWS").replace("'", "").replace(":", " -")[:40]
+    vertical_vf = (
+        "scale=1080:1920:force_original_aspect_ratio=increase,"
+        "crop=1080:1920,"
+        f"drawtext=fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf:"
+        f"text='{safe_hook}':fontsize=42:fontcolor=yellow@0.95:"
+        f"x=(w-tw)/2:y=120:shadowcolor=black@0.9:shadowx=2:shadowy=2:"
+        f"enable='between(t,0,4)'"
+    )
+    run(["ffmpeg", "-y", "-i", raw_file, "-vf", vertical_vf,
+         "-c:v", "libx264", "-preset", "veryfast", "-crf", "24",
+         "-c:a", "copy", "-movflags", "+faststart", short_file], timeout=180)
+
+    for temp_file in [script_file, voice_file, human_file, raw_file]:
+        try:
+            if os.path.exists(temp_file):
+                os.remove(temp_file)
+        except OSError:
+            pass
+
+    if os.path.exists(short_file):
+        log(f"  ✅ Short: {short_file} ({total_dur:.1f}s)")
+        return short_file
+    return None
+
+
+def resolve_video_mode(config, long_form=False, auto_long_form=False):
+    """Pick short vs long video mode from config and CLI flags."""
+    if long_form:
+        return "long"
+    score_data = config.get("monetization_score") or {}
+    total_score = score_data.get("total") if isinstance(score_data, dict) else None
+    priority_tier = config.get("priority_tier", 3)
+    if auto_long_form and total_score is not None:
+        try:
+            if float(total_score) >= LONG_FORM_SCORE_THRESHOLD and priority_tier <= 2:
+                return "long"
+        except (TypeError, ValueError):
+            pass
+    mode = config.get("video_mode", "short")
+    return mode if mode in ("short", "long") else "short"
+
+
+def get_word_targets(video_mode):
+    if video_mode == "long":
+        return TARGET_MIN_WORDS_LONG, TARGET_MAX_WORDS_LONG
+    return TARGET_MIN_WORDS, TARGET_MAX_WORDS
+
+
+def score_title_candidate(title):
+    """Heuristic CTR/SEO score for auto-picking best title."""
+    if not title:
+        return 0
+    score = 0
+    length = len(title)
+    if length <= 60:
+        score += 3
+    elif length <= 70:
+        score += 1
+    if re.search(r"\d|₹|\$|%|km|bhp|kWh", title):
+        score += 2
+    if re.search(r"\b(why|how|vs|just|new|secret|shocking|game)\b", title, re.I):
+        score += 2
+    if "| Tech Meets Travel" in title:
+        score -= 3
+    return score
+
+
+def select_best_title(candidates, fallback_topic):
+    titles = [t.strip() for t in (candidates or []) if t and t.strip()]
+    if not titles:
+        return fallback_topic[:60]
+    return max(titles, key=score_title_candidate)[:60]
+
+
+def generate_chapters_from_script(duration_seconds, video_mode="short"):
+    """Build chapter timestamps from duration and video mode."""
+    duration_seconds = max(float(duration_seconds or 120), 30)
+    if video_mode == "long":
+        sections = [
+            (0.00, "Hook"),
+            (0.08, "Introduction"),
+            (0.20, "Main Story"),
+            (0.55, "Industry Impact"),
+            (0.80, "Final Verdict"),
+            (0.92, "Subscribe"),
+        ]
+    else:
+        sections = [
+            (0.00, "The Main Story"),
+            (0.15, "Full Details"),
+            (0.50, "Comparison and Context"),
+            (0.75, "Honest Take"),
+            (0.88, "Subscribe"),
+        ]
+    lines = []
+    for fraction, label in sections:
+        total_secs = int(duration_seconds * fraction)
+        minutes, seconds = divmod(total_secs, 60)
+        lines.append(f"{minutes}:{seconds:02d} {label}")
+    return "\n".join(lines)
+
+
+def append_ai_disclosure(description):
+    desc = (description or "").strip()
+    if "AI assistance" in desc or "AI assist" in desc:
+        return desc
+    return desc + AI_DISCLOSURE
+
+
+def normalize_config_defaults(config):
+    """Ensure extended config fields exist with sane defaults."""
+    config.setdefault("news_summary", {})
+    config.setdefault("monetization_score", {"total": 5})
+    config.setdefault("title_candidates", [])
+    config.setdefault("image_search_queries", [])
+    config.setdefault("broll_queries", [])
+    config.setdefault("video_mode", "short")
+    config.setdefault("priority_tier", 3)
+    return config
+
+
+def discover_daily_config(long_form=False, auto_long_form=False):
     log("🧠 LLM deciding today's topic...")
     now = datetime.datetime.now()
 
@@ -1288,6 +1514,7 @@ def discover_daily_config():
         slot_note = "TIME SLOT: Evening. Prefer comparison, explainer or suv format."
 
     prompt = DAILY_TOPIC_PROMPT.format(
+        master_prompt=MASTER_SYSTEM_PROMPT,
         date=now.strftime("%Y-%m-%d"),
         day=now.strftime("%A"),
         car_news=car_news[:800],
@@ -1297,27 +1524,43 @@ def discover_daily_config():
     if slot_note:
         prompt += f"\n\n{slot_note}"
 
-    raw = call_llm(prompt, prefer="gemini", max_tokens=1000)
+    raw = call_llm(prompt, prefer="gemini", max_tokens=2000)
     try:
         data = parse_json_response(raw)
+        data = normalize_config_defaults(data)
         data["topic"] = deduplicate_topic(data["topic"])
+        data["video_mode"] = resolve_video_mode(data, long_form, auto_long_form)
         log(f"  📌 Topic: {data['topic']}")
         log(f"  🎭 Format: {data['format']}")
+        log(f"  ⏱️  Mode: {data['video_mode']}")
+        score = data.get("monetization_score", {})
+        if isinstance(score, dict) and score.get("total"):
+            log(f"  📊 Monetization score: {score.get('total')}")
         log(f"  💡 Reason: {data.get('reason','')}")
         return data
     except Exception as e:
         log(f"  ⚠️ JSON parse failed ({e}) — using random evergreen")
-        return {
+        fallback = {
             "topic":           deduplicate_topic(random.choice(EVERGREEN_TOPICS)),
             "format":          random.choice(CONTENT_FORMAT_TYPES),
             "pexels_keyword":  "car",
             "hook_angle":      "Here's the biggest car story you need to know today.",
             "reason":          "Fallback",
+            "video_mode":      "long" if long_form else "short",
+            "priority_tier":   3,
+            "news_summary":    {},
+            "monetization_score": {"total": 5},
+            "title_candidates": [],
+            "image_search_queries": ["electric car india", "car showroom"],
+            "broll_queries": ["highway driving car"],
         }
+        return normalize_config_defaults(fallback)
 
 
-def generate_script(topic, format_type, hook_angle, voice_gender):
-    log(f"  📝 Script ({format_type}, {voice_gender} voice)...")
+def generate_script(topic, format_type, hook_angle, voice_gender, video_mode="short"):
+    min_words, max_words = get_word_targets(video_mode)
+    prompt_template = SCRIPT_PROMPT_LONG if video_mode == "long" else SCRIPT_PROMPT_SHORT
+    log(f"  📝 Script ({format_type}, {voice_gender}, {video_mode}, {min_words}-{max_words} words)...")
     t0 = time.time()
 
     def build_prompt(attempt=0):
@@ -1325,16 +1568,16 @@ def generate_script(topic, format_type, hook_angle, voice_gender):
         if attempt > 0:
             note = (
                 f"\n\nCRITICAL — ATTEMPT {attempt+1}: Previous response was too short. "
-                f"You MUST write {TARGET_MIN_WORDS}-{TARGET_MAX_WORDS} words. "
-                "Beat 2 alone needs 150+ words. Write FULL complete sentences."
+                f"You MUST write {min_words}-{max_words} words. Write FULL complete sentences."
             )
-        return SCRIPT_PROMPT.format(
+        return prompt_template.format(
+            master_prompt=MASTER_SYSTEM_PROMPT,
             topic=topic,
             format_type=format_type,
             hook_angle=hook_angle,
             voice_gender=voice_gender,
-            target_min_words=TARGET_MIN_WORDS,
-            target_max_words=TARGET_MAX_WORDS,
+            target_min_words=min_words,
+            target_max_words=max_words,
         ) + note
 
     text = ""
@@ -1342,33 +1585,137 @@ def generate_script(topic, format_type, hook_angle, voice_gender):
         resp = call_llm(build_prompt(attempt))
         words = len(resp.strip().split())
         log(f"  Attempt {attempt+1}: {words} words")
-        if words >= TARGET_MIN_WORDS:
+        if words >= min_words:
             text = resp.strip()
             break
         text = resp.strip()
         if attempt < 2:
-            log(f"  Too short ({words} < {TARGET_MIN_WORDS}) — retrying...")
+            log(f"  Too short ({words} < {min_words}) — retrying...")
             time.sleep(3)
 
-    if len(text.split()) > TARGET_MAX_WORDS:
-        words = text.split()
-        text = " ".join(words[:TARGET_MAX_WORDS])
+    if len(text.split()) > max_words:
+        text = " ".join(text.split()[:max_words])
 
     if not text.strip():
         log("  ❌ Script generation failed — all attempts returned empty")
         return ""
+
+    ok, cleaned, reason = validate_script(text, min_words=min_words)
+    if not ok:
+        log(f"  ⚠️ Script validation failed ({reason}) — retrying once...")
+        resp = call_llm(build_prompt(1))
+        ok2, cleaned2, reason2 = validate_script(resp.strip(), min_words=min_words)
+        if ok2:
+            text = cleaned2
+        else:
+            log(f"  ⚠️ Script still invalid ({reason2}) — using best effort")
+            text = cleaned if cleaned else text.strip()
+    else:
+        text = cleaned
+
     log(f"  ✅ Script: {len(text.split())} words in {time.time()-t0:.0f}s")
     return text
 
 
 def generate_subtitles(script):
+    clean_script = re.sub(r"\[PAUSE_\w+\]", " ", script or "")
+    try:
+        prompt = SUBTITLE_PROMPT.format(script=clean_script[:3500])
+        raw = call_llm_groq(prompt, max_tokens=1500)
+        lines = [line.strip() for line in raw.strip().split("\n") if line.strip()]
+        if lines:
+            return [f"{index}\\n{line}" for index, line in enumerate(lines, 1)]
+    except Exception as subtitle_error:
+        log(f"  ⚠️ LLM subtitles failed ({subtitle_error}) — using wrap fallback")
+
     import textwrap
-    words = script.strip().split()
-    lines = textwrap.wrap(' '.join(words), width=40)
-    subtitles = []
-    for i, line in enumerate(lines, 1):
-        subtitles.append(f"{i}\\n{line}")
-    return subtitles
+    wrapped = textwrap.wrap(" ".join(clean_script.split()), width=40)
+    return [f"{index}\\n{line}" for index, line in enumerate(wrapped, 1)]
+
+
+def generate_content_package(topic, format_type, hook_angle, script, config, video_mode="short"):
+    """Script-aware metadata and full content package."""
+    log("  📦 Generating content package (script-aligned)...")
+    news_summary = config.get("news_summary", {})
+    prompt = CONTENT_PACKAGE_PROMPT.format(
+        master_prompt=MASTER_SYSTEM_PROMPT,
+        topic=topic,
+        format_type=format_type,
+        hook_angle=hook_angle,
+        video_mode=video_mode,
+        news_summary=json.dumps(news_summary, ensure_ascii=False),
+        script=script[:6000],
+    )
+    raw = call_llm_groq(prompt, max_retries=3)
+    try:
+        package = parse_json_response(raw)
+    except Exception as package_error:
+        log(f"  ⚠️ Content package parse failed ({package_error}) — fallback metadata")
+        package = generate_metadata(topic, format_type, hook_angle)
+
+    candidates = package.get("title_candidates") or config.get("title_candidates") or []
+    if not package.get("title"):
+        package["title"] = select_best_title(candidates, topic)
+    elif candidates:
+        best = select_best_title(candidates + [package["title"]], topic)
+        package["title"] = best
+
+    if not package.get("thumbnail_headline"):
+        package["thumbnail_headline"] = " ".join(package["title"].split()[:4]).upper()
+
+    if not package.get("short_script"):
+        package["short_script"] = generate_short_script(topic, hook_angle, script)
+
+    package.setdefault("keywords", "")
+    package.setdefault("community_post", f"What do you think about {topic}? Comment below.")
+    package.setdefault("future_video_ideas", [])
+    package.setdefault("short_title", package["title"][:70])
+    package["title_candidates"] = candidates
+    package["news_summary"] = news_summary
+    package["monetization_score"] = config.get("monetization_score", {})
+    package["video_mode"] = video_mode
+    package["image_search_queries"] = config.get("image_search_queries", [])
+    package["broll_queries"] = config.get("broll_queries", [])
+    return package
+
+
+def generate_short_script(topic, hook_angle, main_script):
+    """Dedicated 45–60s Shorts script."""
+    excerpt = re.sub(r"\[PAUSE_\w+\]", " ", main_script or "")[:1200]
+    prompt = SHORT_SCRIPT_PROMPT.format(
+        master_prompt=MASTER_SYSTEM_PROMPT,
+        topic=topic,
+        hook_angle=hook_angle,
+        script_excerpt=excerpt,
+    )
+    try:
+        text = call_llm_groq(prompt, max_retries=2).strip()
+        if len(text.split()) >= 60:
+            return text
+    except Exception:
+        pass
+    words = excerpt.split()[:100]
+    return (
+        f"{hook_angle} [PAUSE_SHORT] "
+        f"{' '.join(words)} [PAUSE_MED] "
+        "Follow for daily car and EV news. What would you pick — comment below."
+    )
+
+
+def finalize_metadata(metadata, duration_seconds, source_citation=""):
+    """Add chapters, AI disclosure, and source to description."""
+    video_mode = metadata.get("video_mode", "short")
+    chapters = generate_chapters_from_script(duration_seconds, video_mode)
+    metadata["chapters"] = chapters
+
+    description = metadata.get("description", "")
+    if chapters and chapters not in description:
+        description = description.rstrip() + "\n\n📑 Chapters:\n" + chapters
+    if source_citation and source_citation not in description:
+        description = description.rstrip() + f"\n\n📊 {source_citation}"
+    metadata["description"] = append_ai_disclosure(description)
+    metadata["duration_seconds"] = duration_seconds
+    return metadata
 
 
 def generate_metadata(topic, format_type, hook_angle):
@@ -1426,24 +1773,29 @@ Return ONLY a short source attribution (max 40 chars):
 Return ONLY the source string, nothing else."""
 
 
-def get_source_citation(topic):
-    citations = {
-        "car": "https://www.cardekho.com",
-        "bike": "https://www.bikedekho.com",
-        "toyota": "https://www.toyota.com",
-        "honda": "https://www.honda.com",
-        "hyundai": "https://www.hyundai.com",
-        "tata": "https://www.tatamotors.com",
-        "mahindra": "https://www.mahindra.com",
-        "maruti": "https://www.marutisuzuki.com",
-        "ev": "https://www.ev.com",
-        "electric": "https://www.ev.com",
+def get_source_citation(topic, news_summary=None):
+    if isinstance(news_summary, dict):
+        source_name = news_summary.get("source", "").strip()
+        if source_name and not source_name.startswith("http"):
+            return f"Source: {source_name[:45]}"
+
+    readable_sources = {
+        "tesla": "Source: Tesla / Reuters",
+        "byd": "Source: BYD / Autocar",
+        "tata": "Source: Tata Motors",
+        "mahindra": "Source: Mahindra Auto",
+        "hyundai": "Source: Hyundai India",
+        "maruti": "Source: Maruti Suzuki",
+        "kia": "Source: Kia India",
+        "mg": "Source: MG Motor India",
+        "ev": "Source: EV Industry Reports",
+        "electric": "Source: EV Industry Reports",
     }
     topic_lower = topic.lower()
-    for keyword, url in citations.items():
+    for keyword, label in readable_sources.items():
         if keyword in topic_lower:
-            return url
-    return "https://www.wikipedia.org"
+            return label
+    return "Source: Autocar India"
 
 
 SERIES_FILE = "video_series.json"
@@ -1602,14 +1954,17 @@ def get_authenticated_service():
         return None
 
 
-def validate_script(text):
-    if not text or len(text) < 200:
+def validate_script(text, min_words=200):
+    if not text or len(text.split()) < min_words * 0.7:
         return False, text, "too short"
     text = re.sub(r"^#{1,6}\s+", "", text, flags=re.MULTILINE)
     text = re.sub(r"\*{1,3}([^*]+)\*{1,3}", r"\1", text)
     text = re.sub(r"^[-*]\s+", "", text, flags=re.MULTILINE)
     text = re.sub(r"^\d+\.\s+", "", text, flags=re.MULTILINE)
     text = re.sub(r"```[^`]*```", "", text, flags=re.DOTALL)
+    filler = ("in this video", "without further ado", "smash that like")
+    if any(phrase in text.lower() for phrase in filler):
+        return False, text.strip(), "filler detected"
     text = text.strip()
     return True, text, "ok"
 
@@ -1939,10 +2294,12 @@ def _tt_font(size, bold=True):
 
 
 
-def generate_thumbnail(title, format_type, output_name, bg_image_path=None):
-    """6 distinct layouts — one per format type."""
+def generate_thumbnail(title, format_type, output_name, bg_image_path=None,
+                       thumbnail_headline="", thumbnail_concept=""):
+    """Format-specific thumbnail with CTR-optimized headline."""
+    display_title = thumbnail_headline or title
     try:
-        from PIL import Image, ImageDraw
+        from PIL import Image, ImageDraw, ImageFilter, ImageEnhance
         import os, math, random
         os.makedirs(THUMBNAIL_DIR, exist_ok=True)
         W,H=1280,720
@@ -1973,7 +2330,7 @@ def generate_thumbnail(title, format_type, output_name, bg_image_path=None):
             d.text((22,75),"B R E A K I N G",font=_tt_font(26),fill=(255,210,0))
             d.rectangle([14,70,18,H-70],fill=(255,210,0))
             _draw_animated_car(d,W-200,H//2+20,1.2,acc,"sedan")
-            lines=_tt_wrap(title,16); ty=125
+            lines=_tt_wrap(display_title,16); ty=125
             for i,ln in enumerate(lines):
                 fs=92 if i==0 else 66; _tt_shadow(d,45,ty,ln,_tt_font(fs),(255,255,255) if i==0 else (220,220,220)); ty+=fs+14
             d.rectangle([45,ty+6,580,ty+14],fill=(225,5,30))
@@ -1985,7 +2342,7 @@ def generate_thumbnail(title, format_type, output_name, bg_image_path=None):
             d.polygon([(W-200,0),(W,0),(W,200)],fill=acc)
             d.text((W-108,28),"NEW",font=_tt_font(34),fill=(255,255,255))
             d.text((W-142,68),"LAUNCH",font=_tt_font(24),fill=(255,255,255))
-            lines=_tt_wrap(title,17); ty=155
+            lines=_tt_wrap(display_title,17); ty=155
             for i,ln in enumerate(lines):
                 fs=86 if i==0 else 62; _tt_shadow(d,48,ty,ln,_tt_font(fs),(255,255,255) if i==0 else (200,240,200)); ty+=fs+14
             d.rectangle([48,ty+6,480,ty+14],fill=acc)
@@ -1999,7 +2356,7 @@ def generate_thumbnail(title, format_type, output_name, bg_image_path=None):
             d.text((W//2,H//2),"VS",font=_tt_font(72),fill=(12,12,35),anchor="mm")
             _draw_animated_car(d,W//4,H//2+10,1.1,acc,"sedan")
             _draw_animated_car(d,W*3//4,H//2+10,1.1,(255,130,0),"suv")
-            parts=title.lower().split(" vs ") if " vs " in title.lower() else ["",""]
+            parts=display_title.lower().split(" vs ") if " vs " in display_title.lower() else ["",""]
             if parts[0]: d.text((W//4,H-90),parts[0][:20].upper(),font=_tt_font(32),fill=(200,220,255),anchor="mm")
             if len(parts)>1 and parts[1]: d.text((W*3//4,H-90),parts[1][:20].upper(),font=_tt_font(32),fill=(255,200,150),anchor="mm")
             d.rectangle([0,0,W,55],fill=(15,15,40))
@@ -2014,7 +2371,7 @@ def generate_thumbnail(title, format_type, output_name, bg_image_path=None):
             _draw_animated_car(d,int(W*.67),H//2+10,1.35,acc,"ev")
             d.rounded_rectangle([42,42,190,96],radius=12,fill=acc)
             d.text((116,69),"EV NEWS",font=_tt_font(28),fill=(255,255,255),anchor="mm")
-            lines=_tt_wrap(title,17); ty=118
+            lines=_tt_wrap(display_title,17); ty=118
             for i,ln in enumerate(lines):
                 fs=82 if i==0 else 60; _tt_shadow(d,42,ty,ln,_tt_font(fs),(255,255,255) if i==0 else (160,240,225)); ty+=fs+14
             d.rectangle([42,ty+5,480,ty+13],fill=acc)
@@ -2022,10 +2379,10 @@ def generate_thumbnail(title, format_type, output_name, bg_image_path=None):
             for y in range(H):
                 t=y/H; d.line([(0,y),(W,y)],fill=(int(12+t*20),int(10+t*14),int(5+t*8)))
             d.rectangle([0,0,W,88],fill=(28,22,5)); d.rectangle([0,80,W,92],fill=(215,162,0))
-            d.text((W//2,44),"💡 EXPLAINED IN TAMIL",font=_tt_font(36),fill=(215,162,0),anchor="mm")
+            d.text((W//2,44),"💡 EXPLAINED",font=_tt_font(36),fill=(215,162,0),anchor="mm")
             d.rectangle([0,88,14,H],fill=(215,162,0))
             _draw_animated_car(d,W-165,H//2+30,1.0,acc,"sedan")
-            lines=_tt_wrap(title,19); ty=120
+            lines=_tt_wrap(display_title,19); ty=120
             for i,ln in enumerate(lines):
                 fs=78 if i==0 else 58; _tt_shadow(d,38,ty,ln,_tt_font(fs),(255,248,220) if i==0 else (200,188,155)); ty+=fs+16
             d.rounded_rectangle([38,H-108,305,H-58],radius=8,fill=(38,30,8))
@@ -2043,7 +2400,7 @@ def generate_thumbnail(title, format_type, output_name, bg_image_path=None):
             _draw_animated_car(d,int(W*.66),H//2,1.35,acc,"suv")
             d.rectangle([42,42,225,98],fill=acc); d.rectangle([42,42,225,98],outline=(255,160,50),width=3)
             d.text((133,70),"4×4 SUV",font=_tt_font(32),fill=(255,255,255),anchor="mm")
-            lines=_tt_wrap(title,16); ty=125
+            lines=_tt_wrap(display_title,16); ty=125
             for i,ln in enumerate(lines):
                 fs=84 if i==0 else 62; _tt_shadow(d,42,ty,ln,_tt_font(fs),(255,255,255) if i==0 else (240,180,110)); ty+=fs+14
             d.rectangle([42,ty+6,470,ty+14],fill=acc)
@@ -2057,31 +2414,34 @@ def generate_thumbnail(title, format_type, output_name, bg_image_path=None):
 
 
 
-def upload_short_to_youtube(short_path, main_title, main_description, tags_str, youtube):
-    """Upload Short to YouTube with #Shorts tag for Shorts feed discovery."""
+def upload_short_to_youtube(short_path, short_metadata, youtube):
+    """Upload Short to YouTube with dedicated Shorts metadata."""
     if not short_path or not os.path.exists(short_path):
         return None
     try:
-        # Shorts title: keep under 100 chars, add #Shorts
-        short_title = main_title[:90] + " #Shorts" if len(main_title) <= 90 else main_title[:88] + "… #Shorts"
+        short_title = short_metadata.get("short_title") or short_metadata.get("title", "Car News")
+        if "#Shorts" not in short_title:
+            short_title = (short_title[:88] + " #Shorts") if len(short_title) <= 88 else short_title[:86] + "… #Shorts"
 
-        # Shorts description: first 2 lines + #Shorts tag
-        short_desc_lines = (main_description or "").split("\n")[:3]
-        short_desc = "\n".join(short_desc_lines) + "\n\n#Shorts"
+        short_desc = short_metadata.get("short_description") or short_metadata.get("description", "")
+        short_desc_lines = short_desc.split("\n")[:4]
+        short_desc = "\n".join(short_desc_lines) + "\n\n#Shorts #CarNews #EV"
+        short_desc = append_ai_disclosure(short_desc)
 
-        # Tags: add Shorts-specific tags
-        tags = [t.strip() for t in tags_str.split(",") if t.strip()][:25]
-        if "Shorts" not in tags: tags.insert(0, "Shorts")
-        if "YouTubeShorts" not in tags: tags.insert(1, "YouTubeShorts")
+        tags = [t.strip() for t in short_metadata.get("tags", "").split(",") if t.strip()][:25]
+        if "Shorts" not in tags:
+            tags.insert(0, "Shorts")
+        if "YouTubeShorts" not in tags:
+            tags.insert(1, "YouTubeShorts")
 
         body = {
             "snippet": {
                 "title":       short_title[:100],
                 "description": short_desc[:5000],
                 "tags":        tags[:30],
-                "categoryId":  "22",   # Shorts stay as People & Blogs — YouTube auto-classifies
-            "defaultLanguage": "en",
-            "defaultAudioLanguage": "en",
+                "categoryId":  "2",
+                "defaultLanguage": "en",
+                "defaultAudioLanguage": "en",
             },
             "status": {
                 "privacyStatus":           "public",
@@ -2627,44 +2987,59 @@ def fetch_youtube_cc_clip(topic, output_dir, max_duration=30):
     return None
 
 
-def fetch_free_media(topic, format_type, output_dir, count=5):
+def fetch_free_media(topic, format_type, output_dir, count=5, image_search_queries=None):
     """Master fetcher — tries all free sources, returns best available images."""
     os.makedirs(output_dir, exist_ok=True)
     all_images = []
+    queries = [q.strip() for q in (image_search_queries or []) if q and q.strip()]
+    if not queries:
+        queries = [topic]
 
     log(f"  🔍 Fetching free media for: {topic[:50]}...")
 
-    # Layer 1: Wikimedia Commons (real car photos)
-    wiki_images = fetch_wikimedia_car_images(topic, format_type, output_dir, count=3)
-    all_images.extend(wiki_images)
+    for query in queries[:5]:
+        if len(all_images) >= count:
+            break
+        wiki_images = fetch_wikimedia_car_images(query, format_type, output_dir,
+                                                  count=max(1, count - len(all_images)))
+        for img in wiki_images:
+            if img not in all_images:
+                all_images.append(img)
 
-    # Layer 2: Pixabay (if need more)
     if len(all_images) < count:
-        pix_images = fetch_pixabay_car_images(topic, format_type, output_dir,
-                                               count=count - len(all_images))
-        all_images.extend(pix_images)
+        for query in queries[:3]:
+            if len(all_images) >= count:
+                break
+            pix_images = fetch_pixabay_car_images(query, format_type, output_dir,
+                                                   count=count - len(all_images))
+            for img in pix_images:
+                if img not in all_images:
+                    all_images.append(img)
 
-    # Layer 3: Pexels (existing, if still need more)
     if len(all_images) < count:
         pexels_kw = {
             "ev": "electric car", "suv": "suv india",
             "news": "car india", "launch": "car showroom",
             "comparison": "cars road", "explainer": "car dashboard",
         }.get(format_type, "car india")
-        # Override with topic-specific car model for more relevant images
         import re as _re_tt
         _car_match = _re_tt.search(
-            r"\b(Tata|Maruti|Hyundai|Kia|Mahindra|Toyota|Honda|Skoda|MG|Nexon|Creta|Seltos|Punch|Brezza|Safari|Harrier|XUV|Scorpio|Innova|Fortuner)\b",
+            r"\b(Tata|Maruti|Hyundai|Kia|Mahindra|Toyota|Honda|Skoda|MG|Nexon|Creta|Seltos|Punch|Brezza|Safari|Harrier|XUV|Scorpio|Innova|Fortuner|Tesla|BYD)\b",
             topic, _re_tt.IGNORECASE)
         if _car_match:
-            pexels_kw = _car_match.group(1).lower() + " car india"
+            pexels_kw = _car_match.group(1).lower() + " car"
 
-        pexels_images = fetch_pexels_images(pexels_kw, output_dir,
-                                             count=count - len(all_images))
-        all_images.extend(pexels_images)
+        search_terms = queries + [pexels_kw]
+        for term in search_terms[:4]:
+            if len(all_images) >= count:
+                break
+            pexels_images = fetch_pexels_images(term, output_dir,
+                                                 count=count - len(all_images))
+            for img in pexels_images:
+                if img not in all_images:
+                    all_images.append(img)
 
-    log(f"  ✅ Free media: {len(all_images)} images total "
-        f"(wiki={len(wiki_images)}, rest={len(all_images)-len(wiki_images)})")
+    log(f"  ✅ Free media: {len(all_images)} images total")
     return all_images[:count]
 
 
@@ -2922,86 +3297,57 @@ def generate_video_scenes(output_name, topic="", scene_type="default",
     return paths
 
 
-def safe_process_video(topic=None, format_type=None, upload=False, privacy="public"):
+def safe_process_video(topic=None, format_type=None, upload=False, privacy="public",
+                       long_form=False, auto_long_form=False):
     ensure_dirs()
     t_start = time.time()
 
     if topic:
-        config = {
+        config = normalize_config_defaults({
             "topic":          topic,
             "format":         format_type or random.choice(CONTENT_FORMAT_TYPES),
             "pexels_keyword": "car",
             "hook_angle":     "Here's the biggest car story you need to know today.",
-        }
+            "video_mode":     "long" if long_form else "short",
+        })
     else:
-        config = discover_daily_config()
+        config = discover_daily_config(long_form=long_form, auto_long_form=auto_long_form)
 
-    topic_val     = config["topic"]
-    fmt           = config["format"]
-    pexels_kw     = config.get("pexels_keyword", "car")
-    hook_angle    = config.get("hook_angle", "")
-    gender, _, _  = VOICE_ASSIGNMENT.get(fmt, VOICE_ASSIGNMENT["default"])
+    topic_val = config["topic"]
+    fmt = config["format"]
+    hook_angle = config.get("hook_angle", "")
+    video_mode = resolve_video_mode(config, long_form, auto_long_form)
+    config["video_mode"] = video_mode
+    gender, _, _ = VOICE_ASSIGNMENT.get(fmt, VOICE_ASSIGNMENT["default"])
+    image_queries = config.get("image_search_queries") or []
+    scene_count = 12 if video_mode == "long" else 6
+    stock_count = 6 if video_mode == "long" else 4
 
     log(f"{'='*55}")
     log(f"  {CHANNEL_NAME}")
     log(f"  Topic: {topic_val}")
-    log(f"  Format: {fmt} | Voice: {gender}")
+    log(f"  Format: {fmt} | Voice: {gender} | Mode: {video_mode}")
     log(f"{'='*55}")
 
     save_used_topic(topic_val)
-
     safe_name = hashlib.md5(topic_val.encode()).hexdigest()[:10]
-    img_dir   = os.path.join(PEXELS_DIR, safe_name)
-    # Scenes always first (zero network) + free media on top
-    log("🎨 Generating animated scenes...")
-    images = generate_video_scenes(safe_name, topic=topic_val,
-                                   scene_type=fmt, num_scenes=6, channel="tt")
-
-    # Layer 1 (GUARANTEED): Animated PIL scenes — zero network, always works
-    # (already generated above — just add bonus layers on top)
-    if not images:
-        ensure_fallback_image()
-        images = ["image.png"] if os.path.exists("image.png") else []
-    log(f"  ✅ Scenes: {len(images)} generated")
-
-    # Layer 2: Existing free media — Wikimedia + Pixabay + Pexels (reliable)
-    free_imgs = fetch_free_media(topic_val, fmt, img_dir, count=3)
-    if free_imgs:
-        images = free_imgs + images
-
-    # Layer 3: Pollinations AI (bonus — non-blocking, 20s timeout)
-    poll_img = None
-    try:
-        poll_path = os.path.join(img_dir, "ai_car.jpg")
-        car_name  = topic_val.split()[0] if topic_val else "Indian SUV"
-        poll_img  = fetch_pollinations_image_tt(car_name, fmt, poll_path)
-        if poll_img:
-            images = [poll_img] + images
-            log(f"  🎨 AI car image generated")
-    except Exception as e:
-        log(f"  ⚠️ Pollinations skipped: {e}")
-
-    log(f"  📦 Total images: {len(images)}")
-    # Best bg for thumbnail
-    thumb_bg = poll_img or (free_imgs[0] if free_imgs else None)
-
-    bgm_path = ensure_bgm(fmt)
+    img_dir = os.path.join(PEXELS_DIR, safe_name)
 
     log("🤖 Step 1: Generating script...")
-    script = generate_script(topic_val, fmt, hook_angle, gender)
+    script = generate_script(topic_val, fmt, hook_angle, gender, video_mode=video_mode)
     if not script or not script.strip():
         log("  ❌ Script empty — aborting pipeline")
         return None
 
-    log("🤖 Step 2: Generating subtitles + metadata (parallel)...")
+    log("🤖 Step 2: Generating content package + subtitles...")
     with concurrent.futures.ThreadPoolExecutor(max_workers=2) as pool:
-        sf = pool.submit(generate_subtitles, script)
-        mf = pool.submit(generate_metadata, topic_val, fmt, hook_angle)
-        subtitle_lines = sf.result()
-        metadata       = mf.result()
+        subtitle_future = pool.submit(generate_subtitles, script)
+        package_future = pool.submit(
+            generate_content_package, topic_val, fmt, hook_angle, script, config, video_mode)
+        subtitle_lines = subtitle_future.result()
+        metadata = package_future.result()
 
     title_short = metadata.get("title", topic_val)[:50]
-
     part_num, series_len, series_title, prev_vid = get_series_info(topic_val)
     if part_num and part_num > 1:
         series_end = build_series_end_card(part_num, series_title, prev_vid)
@@ -3011,38 +3357,49 @@ def safe_process_video(topic=None, format_type=None, upload=False, privacy="publ
     elif part_num == 1:
         log(f"  📚 New series started: {series_title}")
 
-    source_citation = get_source_citation(topic_val)
+    source_citation = get_source_citation(topic_val, config.get("news_summary"))
 
-    with open(f"{SCRIPTS_DIR}/{safe_name}.txt", "w", encoding="utf-8") as f:
-        f.write(f"TOPIC: {topic_val}\nFORMAT: {fmt}\n\n{script}")
+    log("🎨 Fetching media...")
+    free_imgs = fetch_free_media(
+        topic_val, fmt, img_dir, count=stock_count, image_search_queries=image_queries)
+    images = list(free_imgs)
 
-    thumb_path = generate_thumbnail(
-        metadata.get("title", topic_val), fmt, safe_name,
-        bg_image_path=thumb_bg
-    )
-    if thumb_path:
-        metadata["thumbnail_path"] = thumb_path
-        log(f"  ✅ Thumbnail generated")
-    metadata["duration_seconds"] = 120   # for end screen timing
-    metadata["format"] = fmt             # for playlist routing
+    poll_img = None
+    try:
+        poll_path = os.path.join(img_dir, "ai_car.jpg")
+        car_name = topic_val.split()[0] if topic_val else "Electric SUV"
+        poll_img = fetch_pollinations_image_tt(car_name, fmt, poll_path)
+        if poll_img:
+            images = [poll_img] + images
+            log("  🎨 AI car image generated")
+    except Exception as pollination_error:
+        log(f"  ⚠️ Pollinations skipped: {pollination_error}")
 
-    meta_data = {
-        "topic": topic_val, "format": fmt, "title": metadata.get("title"),
-        "description": metadata.get("description"),
-        "tags": metadata.get("tags"),
-        "pinned_comment": metadata.get("pinned_comment"),
-        "thumbnail_concept": metadata.get("thumbnail_concept"),
-        "created": datetime.datetime.now().isoformat(),
-    }
-    metadata["topic"]  = topic_val
-    metadata["format"] = fmt
-    with open(f"{METADATA_DIR}/{safe_name}.json", "w", encoding="utf-8") as f:
-        json.dump(meta_data, f, ensure_ascii=False, indent=2)
+    if len(images) < 3:
+        log("  🎨 Stock thin — adding format-specific scenes...")
+        if len(images) < 2:
+            scene_paths = generate_scenes(safe_name, fmt, num_scenes=min(scene_count, 5))
+            images.extend(scene_paths)
+        else:
+            fallback_scenes = generate_video_scenes(
+                safe_name, topic=topic_val, scene_type=fmt,
+                num_scenes=max(3, scene_count - len(images)), channel="tt")
+            images.extend(fallback_scenes)
 
-    log(f"  Title: {metadata.get('title','')[:60]}")
+    if not images:
+        ensure_fallback_image()
+        images = ["image.png"] if os.path.exists("image.png") else []
 
-    log("🎬 Creating video...")
-    video = create_video(
+    log(f"  📦 Total images: {len(images)}")
+    thumb_bg = poll_img or (free_imgs[0] if free_imgs else None)
+    bgm_path = ensure_bgm(fmt)
+
+    with open(f"{SCRIPTS_DIR}/{safe_name}.txt", "w", encoding="utf-8") as script_handle:
+        script_handle.write(
+            f"TOPIC: {topic_val}\nFORMAT: {fmt}\nMODE: {video_mode}\n\n{script}")
+
+    log("🎬 Creating main video...")
+    video_result = create_video(
         script_text=script,
         english_subtitles=subtitle_lines,
         images_input=images,
@@ -3053,50 +3410,102 @@ def safe_process_video(topic=None, format_type=None, upload=False, privacy="publ
         source_citation=source_citation,
         topic_val=topic_val,
     )
+    if not video_result:
+        log("❌ Video creation failed")
+        return None
+
+    video, duration_seconds = video_result
+    metadata = finalize_metadata(metadata, duration_seconds, source_citation)
+    metadata["format"] = fmt
+    metadata["topic"] = topic_val
+
+    thumb_path = generate_thumbnail(
+        metadata.get("title", topic_val),
+        fmt,
+        safe_name,
+        bg_image_path=thumb_bg,
+        thumbnail_headline=metadata.get("thumbnail_headline", ""),
+        thumbnail_concept=metadata.get("thumbnail_concept", ""),
+    )
+    if thumb_path:
+        metadata["thumbnail_path"] = thumb_path
+        log("  ✅ Thumbnail generated")
+
+    short_path = create_short_video(
+        metadata.get("short_script", ""),
+        images,
+        safe_name,
+        format_type=fmt,
+        hook_headline=metadata.get("thumbnail_headline", title_short),
+        bgm_path=bgm_path,
+    )
+    short_metadata = {
+        "title": metadata.get("title", ""),
+        "short_title": metadata.get("short_title", metadata.get("title", "")),
+        "description": metadata.get("description", ""),
+        "short_description": metadata.get("short_script", "")[:500],
+        "tags": metadata.get("tags", ""),
+    }
+
+    meta_data = {
+        "topic": topic_val,
+        "format": fmt,
+        "video_mode": video_mode,
+        "title": metadata.get("title"),
+        "title_candidates": metadata.get("title_candidates", []),
+        "description": metadata.get("description"),
+        "tags": metadata.get("tags"),
+        "keywords": metadata.get("keywords", ""),
+        "chapters": metadata.get("chapters", ""),
+        "pinned_comment": metadata.get("pinned_comment"),
+        "community_post": metadata.get("community_post", ""),
+        "thumbnail_headline": metadata.get("thumbnail_headline", ""),
+        "thumbnail_concept": metadata.get("thumbnail_concept", ""),
+        "short_script": metadata.get("short_script", ""),
+        "short_title": metadata.get("short_title", ""),
+        "future_video_ideas": metadata.get("future_video_ideas", []),
+        "news_summary": metadata.get("news_summary", {}),
+        "monetization_score": metadata.get("monetization_score", {}),
+        "image_search_queries": metadata.get("image_search_queries", []),
+        "broll_queries": metadata.get("broll_queries", []),
+        "duration_seconds": duration_seconds,
+        "created": datetime.datetime.now().isoformat(),
+    }
+    with open(f"{METADATA_DIR}/{safe_name}.json", "w", encoding="utf-8") as meta_handle:
+        json.dump(meta_data, meta_handle, ensure_ascii=False, indent=2)
+
+    log(f"  Title: {metadata.get('title','')[:60]}")
 
     elapsed = time.time() - t_start
-    if video:
-        log(f"✅ VIDEO: {video}")
-        log(f"✅ SHORT: {SHORTS_DIR}/{safe_name}_short.mp4")
-        log(f"⏱️  Total: {elapsed:.0f}s")
+    log(f"✅ VIDEO: {video}")
+    if short_path:
+        log(f"✅ SHORT: {short_path}")
+    log(f"⏱️  Total: {elapsed:.0f}s")
 
-        if upload:
-            log("⬆️ Uploading to YouTube...")
-            # ── Main video upload (independent) ──
-            try:
-                vid = upload_to_youtube(video, metadata, privacy)
-                if vid:
-                    log(f"✅ Live: https://youtu.be/{vid}")
-                    get_series_info(topic_val, video_id=vid)
-            except Exception as e:
-                if is_quota_exceeded(e):
-                    log(f"⚠️ YouTube quota exceeded — video queued for tomorrow")
-                    queue_for_retry(video, metadata, privacy)
-                else:
-                    log(f"⚠️ Main video upload failed: {e}")
+    if upload:
+        log("⬆️ Uploading to YouTube...")
+        try:
+            vid = upload_to_youtube(video, metadata, privacy)
+            if vid:
+                log(f"✅ Live: https://youtu.be/{vid}")
+                get_series_info(topic_val, video_id=vid)
+        except Exception as upload_error:
+            if is_quota_exceeded(upload_error):
+                log("⚠️ YouTube quota exceeded — video queued for tomorrow")
+                queue_for_retry(video, metadata, privacy)
+            else:
+                log(f"⚠️ Main video upload failed: {upload_error}")
 
-            # ── Short upload (fully independent — never affects main video) ──
-            try:
-                short_path = f"{SHORTS_DIR}/{safe_name}_short.mp4"
-                if os.path.exists(short_path):
-                    _yt2 = get_authenticated_service()
-                    if _yt2:
-                        upload_short_to_youtube(
-                            short_path,
-                            metadata.get("title", ""),
-                            metadata.get("description", ""),
-                            metadata.get("tags", ""),
-                            _yt2
-                        )
-                        log("✅ Short uploaded independently")
-                    else:
-                        log("  ⚠️ Short: YouTube auth unavailable")
+        try:
+            if short_path and os.path.exists(short_path):
+                youtube_service = get_authenticated_service()
+                if youtube_service:
+                    upload_short_to_youtube(short_path, short_metadata, youtube_service)
+                    log("✅ Short uploaded independently")
                 else:
-                    log(f"  ℹ️ Short not found at {short_path}")
-            except Exception as short_err:
-                log(f"  ⚠️ Short upload failed (main video unaffected): {short_err}")
-    else:
-        log(f"❌ Video creation failed ({elapsed:.0f}s)")
+                    log("  ⚠️ Short: YouTube auth unavailable")
+        except Exception as short_upload_error:
+            log(f"  ⚠️ Short upload failed (main video unaffected): {short_upload_error}")
 
     return video
 
@@ -3157,11 +3566,15 @@ def main():
     if not GEMINI_KEY and not GROQ_API_KEY:
         print("ERROR: Set GEMINI_KEY or GROQ_API_KEY"); sys.exit(1)
 
-    parser = argparse.ArgumentParser(description="Tech Meets Travel Car News Bot v1.0")
+    parser = argparse.ArgumentParser(description="Tech Meets Travel Car News Bot v2.0")
     parser.add_argument("--day",          help="today")
     parser.add_argument("--topic",        help="Custom topic")
     parser.add_argument("--format",       help="news/launch/comparison/explainer/ev/suv")
     parser.add_argument("--upload",       action="store_true")
+    parser.add_argument("--long-form",    action="store_true",
+                        help="Force 5-8 min long-form video")
+    parser.add_argument("--auto-long-form", action="store_true",
+                        help="Long-form when monetization score >= 7 and tier 1-2")
     parser.add_argument("--privacy",      default="public",
                         choices=["public", "unlisted", "private"])
     parser.add_argument("--daemon",       action="store_true")
@@ -3169,8 +3582,8 @@ def main():
     args = parser.parse_args()
 
     print(f"\n{'='*55}")
-    print(f"  {CHANNEL_NAME} — Car News Automation Bot v1.0")
-    print(f"  2-min videos · English · Auto upload")
+    print(f"  {CHANNEL_NAME} — Car News Automation Bot v2.0")
+    print(f"  Hybrid videos · Global + India · Auto upload")
     print(f"{'='*55}\n")
 
     if args.auth_youtube:
@@ -3179,15 +3592,23 @@ def main():
     if args.daemon:
         daemon_mode(); return
 
+    video_kwargs = {
+        "upload": args.upload,
+        "privacy": args.privacy,
+        "long_form": args.long_form,
+        "auto_long_form": args.auto_long_form,
+    }
+
     if args.topic:
-        safe_process_video(topic=args.topic, format_type=args.format,
-                      upload=args.upload, privacy=args.privacy)
+        safe_process_video(topic=args.topic, format_type=args.format, **video_kwargs)
     elif args.day:
-        safe_process_video(upload=args.upload, privacy=args.privacy)
+        safe_process_video(**video_kwargs)
     else:
         print("Usage:")
         print("  python car_bot.py --day today")
         print("  python car_bot.py --day today --upload")
+        print("  python car_bot.py --day today --upload --auto-long-form")
+        print("  python car_bot.py --day today --upload --long-form")
         print("  python car_bot.py --topic 'Tata Harrier 2026 new features'")
         print("  python car_bot.py --daemon")
         print("  python car_bot.py --auth-youtube")
