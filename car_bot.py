@@ -2645,19 +2645,19 @@ def fetch_free_media(topic, format_type, output_dir, count=5):
         all_images.extend(pix_images)
 
     # Layer 3: Pexels (existing, if still need more)
-    if len(all_images) < 3:
+    if len(all_images) < count:
         pexels_kw = {
             "ev": "electric car", "suv": "suv india",
             "news": "car india", "launch": "car showroom",
             "comparison": "cars road", "explainer": "car dashboard",
         }.get(format_type, "car india")
-    # Override with topic-specific car model for more relevant images
-    import re as _re_tt
-    _car_match = _re_tt.search(
-        r"\b(Tata|Maruti|Hyundai|Kia|Mahindra|Toyota|Honda|Skoda|MG|Nexon|Creta|Seltos|Punch|Brezza|Safari|Harrier|XUV|Scorpio|Innova|Fortuner)\b",
-        topic_val, _re_tt.IGNORECASE)
-    if _car_match:
-        pexels_kw = _car_match.group(1).lower() + " car india"
+        # Override with topic-specific car model for more relevant images
+        import re as _re_tt
+        _car_match = _re_tt.search(
+            r"\b(Tata|Maruti|Hyundai|Kia|Mahindra|Toyota|Honda|Skoda|MG|Nexon|Creta|Seltos|Punch|Brezza|Safari|Harrier|XUV|Scorpio|Innova|Fortuner)\b",
+            topic, _re_tt.IGNORECASE)
+        if _car_match:
+            pexels_kw = _car_match.group(1).lower() + " car india"
 
         pexels_images = fetch_pexels_images(pexels_kw, output_dir,
                                              count=count - len(all_images))
