@@ -17,3 +17,44 @@ update_checks.json
 responded_comments.json
 community_posts/
 playlist_ids.json
+
+# Secrets & credentials — NEVER commit these
+.env
+*.env
+client_secrets.json
+youtube_token.pickle
+*_token.pickle
+*_secrets.json
+token.json
+credentials.json
+service_account.json
+
+# Generated outputs (large files)
+videos/
+shorts/
+audio/
+thumbnails/
+thulir/videos/
+thulir/audio/
+thulir/thumbnails/
+bgm/*.mp3
+pexels_images/
+cache/pexels/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
+.venv/
+venv/
+.env/
+
+# Logs & temp
+*.log
+/tmp/
+.DS_Store
