@@ -123,7 +123,7 @@ EQ_FEMALE = (
     "equalizer=f=2500:t=q:w=1:g=1.5,"   # clarity
     "equalizer=f=5000:t=q:w=1:g=-2,"    # reduce sibilance
     "equalizer=f=8000:t=q:w=1:g=-3,"    # cut harshness
-    "vibrato=f=4.0:d=0.020,"             # subtle natural wobble
+    "aecho=0.8:0.6:20:0.04,"            # tiny room presence — natural space
     "acompressor=threshold=-18dB:ratio=2:attack=8:release=80:makeup=2,"
     "loudnorm=I=-14:TP=-1.5:LRA=9"
 )
@@ -134,7 +134,7 @@ EQ_MALE = (
     "equalizer=f=500:t=q:w=0.8:g=1.5,"
     "equalizer=f=2000:t=q:w=1:g=2,"     # intelligibility
     "equalizer=f=6000:t=q:w=1:g=-2,"
-    "vibrato=f=3.3:d=0.016,"             # very subtle on male
+    "aecho=0.8:0.5:15:0.03,"            # tiny room warmth — no wobble
     "acompressor=threshold=-16dB:ratio=2:attack=6:release=60:makeup=2.5,"
     "loudnorm=I=-14:TP=-1.5:LRA=9"
 )
@@ -1733,7 +1733,7 @@ def generate_subtitles(script):
     clean_script = re.sub(r"\[PAUSE_\w+\]", " ", script or "")
     try:
         prompt = SUBTITLE_PROMPT.format(script=clean_script[:3500])
-        raw = call_llm_groq(prompt, max_tokens=1500)
+        raw = call_llm_gemini(prompt, max_retries=3)  # Gemini — avoids Groq race in Phase 2
         lines = [line.strip() for line in raw.strip().split("\n") if line.strip()]
         if lines:
             return [f"{index}\\n{line}" for index, line in enumerate(lines, 1)]
