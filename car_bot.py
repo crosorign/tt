@@ -1172,24 +1172,38 @@ def create_video(script_text, english_subtitles, images_input, output_name,
 
     gender, voice_id, eq_filter = VOICE_ASSIGNMENT.get(
         format_type, VOICE_ASSIGNMENT["default"])
-    log(f"🔊 Step 1/7 Voice ({gender} — {voice_id})...")
+    log(f"🔊 Step 1/7 Voice SSML ({gender} — {voice_id})...")
     t0 = time.time()
     try:
-        r = run(["edge-tts", "--file", script_file, "--voice", voice_id,
-                 "--rate=" + RATE_BY_FORMAT_TT.get(format_type, "-10%"), "--pitch=+1Hz", "--write-media", voice_file],
-                timeout=300)
-    except subprocess.TimeoutExpired:
-        log("❌ TTS timeout"); return None
-    if r.returncode != 0:
-        log(f"❌ TTS error: {r.stderr[-200:]}"); return None
-    dur = get_dur(voice_file)
-    log(f"  Voice: {dur:.1f}s ({time.time()-t0:.0f}s)")
-
-    log("🎧 Step 2/7 Voice EQ...")
-    r = run(["ffmpeg", "-y", "-i", voice_file, "-af", eq_filter, human_file])
-    if r.returncode != 0:
-        shutil.copy(voice_file, human_file)
-    dur = get_dur(human_file)
+        from ssml_processor import generate_ssml_audio, VOICE_EN_MALE, VOICE_EN_FEMALE
+        ssml_voice = VOICE_EN_FEMALE if gender == "female" else VOICE_EN_MALE
+        ok = generate_ssml_audio(
+            script=script_text,
+            output_path=human_file,
+            voice=ssml_voice,
+            language="en",
+            call_llm_fn=lambda p, **kw: call_llm_gemini(p, max_retries=2),
+            run_fn=run,
+        )
+        if not ok:
+            raise RuntimeError("SSML pipeline returned False")
+        dur = get_dur(human_file)
+        log(f"  Voice SSML: {dur:.1f}s ({time.time()-t0:.0f}s)")
+    except Exception as ssml_err:
+        log(f"  ⚠️ SSML fallback ({ssml_err})")
+        try:
+            r = run(["edge-tts", "--file", script_file, "--voice", voice_id,
+                     "--rate=-10%", "--pitch=+1Hz", "--write-media", voice_file],
+                    timeout=300)
+            if r.returncode != 0:
+                log(f"❌ TTS error: {r.stderr[-200:]}"); return None
+            r2 = run(["ffmpeg", "-y", "-i", voice_file, "-af", eq_filter, human_file])
+            if r2.returncode != 0:
+                shutil.copy(voice_file, human_file)
+        except subprocess.TimeoutExpired:
+            log("❌ TTS timeout"); return None
+        dur = get_dur(human_file)
+    log("🎧 Step 2/7 Voice EQ: handled by SSML pipeline")
 
     log("🎵 Step 3/7 BGM mix...")
     if bgm_path and os.path.exists(bgm_path):
