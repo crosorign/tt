@@ -3409,9 +3409,36 @@ def generate_video_scenes(output_name, topic="", scene_type="default",
     return paths
 
 
+def cleanup_old_artifacts(max_age_hours=24):
+    """Delete generated artifacts older than max_age_hours to keep runner disk clean."""
+    import time as _t
+    now = _t.time()
+    cutoff = now - (max_age_hours * 3600)
+    removed = 0
+    dirs_to_clean = [OUTPUT_DIR, SHORTS_DIR, METADATA_DIR, SCRIPTS_DIR,
+                     PEXELS_DIR, SUBS_DIR, "/tmp"]
+    extensions_to_clean = {".mp4", ".mp3", ".jpg", ".jpeg", ".png",
+                            ".srt", ".txt", ".json"}
+    for d in dirs_to_clean:
+        if not os.path.exists(d):
+            continue
+        for root, dirs, files in os.walk(d):
+            for fname in files:
+                fpath = os.path.join(root, fname)
+                try:
+                    if (os.path.splitext(fname)[1].lower() in extensions_to_clean
+                            and os.path.getmtime(fpath) < cutoff):
+                        os.remove(fpath)
+                        removed += 1
+                except Exception:
+                    pass
+    log(f"🧹 Cleanup: removed {removed} artifacts older than {max_age_hours}h")
+
+
 def safe_process_video(topic=None, format_type=None, upload=False, privacy="public",
                        long_form=False, auto_long_form=False):
     ensure_dirs()
+    cleanup_old_artifacts(max_age_hours=24)
     t_start = time.time()
 
     if topic:
@@ -3445,19 +3472,67 @@ def safe_process_video(topic=None, format_type=None, upload=False, privacy="publ
     safe_name = hashlib.md5(topic_val.encode()).hexdigest()[:10]
     img_dir = os.path.join(PEXELS_DIR, safe_name)
 
-    log("🤖 Step 1: Generating script...")
-    script = generate_script(topic_val, fmt, hook_angle, gender, video_mode=video_mode)
+    # ── PARALLEL PHASE 1: Script + Images + BGM all at once ──────────
+    log("🚀 Phase 1: Script + Images + BGM in parallel...")
+
+    def fetch_all_images():
+        imgs = list(fetch_free_media(
+            topic_val, fmt, img_dir, count=stock_count,
+            image_search_queries=image_queries))
+        poll_path = os.path.join(img_dir, "ai_car.jpg")
+        car_name = topic_val.split()[0] if topic_val else "Electric SUV"
+        try:
+            poll = fetch_pollinations_image_tt(car_name, fmt, poll_path)
+            if poll:
+                imgs = [poll] + imgs
+                log("  🎨 AI car image generated")
+        except Exception as e:
+            log(f"  ⚠️ Pollinations skipped: {e}")
+        return imgs
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=3) as pool:
+        script_future = pool.submit(
+            generate_script, topic_val, fmt, hook_angle, gender, video_mode)
+        images_future = pool.submit(fetch_all_images)
+        bgm_future    = pool.submit(ensure_bgm, fmt)
+
+        script = script_future.result()
+        images = images_future.result()
+        bgm_path = bgm_future.result()
+
     if not script or not script.strip():
         log("  ❌ Script empty — aborting pipeline")
         return None
 
-    log("🤖 Step 2: Generating content package + subtitles...")
-    with concurrent.futures.ThreadPoolExecutor(max_workers=2) as pool:
+    # Fallback scenes if images thin
+    if len(images) < 3:
+        log("  🎨 Stock thin — adding format-specific scenes...")
+        if len(images) < 2:
+            scene_paths = generate_scenes(safe_name, fmt, num_scenes=min(scene_count, 5))
+            images.extend(scene_paths)
+        else:
+            fallback_scenes = generate_video_scenes(
+                safe_name, topic=topic_val, scene_type=fmt,
+                num_scenes=max(3, scene_count - len(images)), channel="tt")
+            images.extend(fallback_scenes)
+    if not images:
+        ensure_fallback_image()
+        images = ["image.png"] if os.path.exists("image.png") else []
+
+    log(f"  📦 Total images: {len(images)}")
+
+    # ── PARALLEL PHASE 2: Subtitles + Metadata + Source citation ─────
+    log("🚀 Phase 2: Subtitles + Metadata + Source citation in parallel...")
+    with concurrent.futures.ThreadPoolExecutor(max_workers=3) as pool:
         subtitle_future = pool.submit(generate_subtitles, script)
-        package_future = pool.submit(
+        package_future  = pool.submit(
             generate_content_package, topic_val, fmt, hook_angle, script, config, video_mode)
-        subtitle_lines = subtitle_future.result()
-        metadata = package_future.result()
+        citation_future = pool.submit(
+            get_source_citation, topic_val, config.get("news_summary"))
+
+        subtitle_lines  = subtitle_future.result()
+        metadata        = package_future.result()
+        source_citation = citation_future.result()
 
     title_short = metadata.get("title", topic_val)[:50]
     part_num, series_len, series_title, prev_vid = get_series_info(topic_val)
@@ -3469,47 +3544,11 @@ def safe_process_video(topic=None, format_type=None, upload=False, privacy="publ
     elif part_num == 1:
         log(f"  📚 New series started: {series_title}")
 
-    source_citation = get_source_citation(topic_val, config.get("news_summary"))
-
-    log("🎨 Fetching media...")
-    free_imgs = fetch_free_media(
-        topic_val, fmt, img_dir, count=stock_count, image_search_queries=image_queries)
-    images = list(free_imgs)
-
-    poll_img = None
-    try:
-        poll_path = os.path.join(img_dir, "ai_car.jpg")
-        car_name = topic_val.split()[0] if topic_val else "Electric SUV"
-        poll_img = fetch_pollinations_image_tt(car_name, fmt, poll_path)
-        if poll_img:
-            images = [poll_img] + images
-            log("  🎨 AI car image generated")
-    except Exception as pollination_error:
-        log(f"  ⚠️ Pollinations skipped: {pollination_error}")
-
-    if len(images) < 3:
-        log("  🎨 Stock thin — adding format-specific scenes...")
-        if len(images) < 2:
-            scene_paths = generate_scenes(safe_name, fmt, num_scenes=min(scene_count, 5))
-            images.extend(scene_paths)
-        else:
-            fallback_scenes = generate_video_scenes(
-                safe_name, topic=topic_val, scene_type=fmt,
-                num_scenes=max(3, scene_count - len(images)), channel="tt")
-            images.extend(fallback_scenes)
-
-    if not images:
-        ensure_fallback_image()
-        images = ["image.png"] if os.path.exists("image.png") else []
-
-    log(f"  📦 Total images: {len(images)}")
-    thumb_bg = poll_img or (free_imgs[0] if free_imgs else None)
-    bgm_path = ensure_bgm(fmt)
-
     with open(f"{SCRIPTS_DIR}/{safe_name}.txt", "w", encoding="utf-8") as script_handle:
         script_handle.write(
             f"TOPIC: {topic_val}\nFORMAT: {fmt}\nMODE: {video_mode}\n\n{script}")
 
+    # ── SEQUENTIAL: Main video (cannot parallelise — needs all inputs) ─
     log("🎬 Creating main video...")
     video_result = create_video(
         script_text=script,
@@ -3530,27 +3569,29 @@ def safe_process_video(topic=None, format_type=None, upload=False, privacy="publ
     metadata = finalize_metadata(metadata, duration_seconds, source_citation)
     metadata["format"] = fmt
     metadata["topic"] = topic_val
+    thumb_bg = images[0] if images else None
 
-    thumb_path = generate_thumbnail(
-        metadata.get("title", topic_val),
-        fmt,
-        safe_name,
-        bg_image_path=thumb_bg,
-        thumbnail_headline=metadata.get("thumbnail_headline", ""),
-        thumbnail_concept=metadata.get("thumbnail_concept", ""),
-    )
+    # ── PARALLEL PHASE 3: Thumbnail + Short video simultaneously ──────
+    log("🚀 Phase 3: Thumbnail + Short video in parallel...")
+    with concurrent.futures.ThreadPoolExecutor(max_workers=2) as pool:
+        thumb_future = pool.submit(
+            generate_thumbnail,
+            metadata.get("title", topic_val), fmt, safe_name,
+            thumb_bg, metadata.get("thumbnail_headline", ""),
+            metadata.get("thumbnail_concept", ""),
+        )
+        short_future = pool.submit(
+            create_short_video,
+            metadata.get("short_script", ""), images, safe_name,
+            fmt, metadata.get("thumbnail_headline", title_short), bgm_path,
+        )
+        thumb_path = thumb_future.result()
+        short_path = short_future.result()
+
     if thumb_path:
         metadata["thumbnail_path"] = thumb_path
         log("  ✅ Thumbnail generated")
 
-    short_path = create_short_video(
-        metadata.get("short_script", ""),
-        images,
-        safe_name,
-        format_type=fmt,
-        hook_headline=metadata.get("thumbnail_headline", title_short),
-        bgm_path=bgm_path,
-    )
     short_metadata = {
         "title": metadata.get("title", ""),
         "short_title": metadata.get("short_title", metadata.get("title", "")),
