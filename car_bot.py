@@ -505,15 +505,30 @@ Rules: instant hook in first 3 seconds, one killer fact, why it matters, comment
 """
 
 KB_PRESETS = [
-    ("min(1.0+0.0006*on,1.15)", "iw/2-(iw/zoom/2)+on*0.2", "ih/2-(ih/zoom/2)",       "zoom-in pan-right"),
-    ("min(1.0+0.0006*on,1.15)", "iw/2-(iw/zoom/2)-on*0.2", "ih/2-(ih/zoom/2)",       "zoom-in pan-left"),
-    ("max(1.15-0.0006*on,1.0)", "iw/2-(iw/zoom/2)",         "ih/2-(ih/zoom/2)",       "zoom-out center"),
-    ("min(1.0+0.0005*on,1.10)", "iw/2-(iw/zoom/2)",         "ih/2-(ih/zoom/2)+on*0.15","zoom-in pan-up"),
-    ("max(1.12-0.0005*on,1.0)", "iw/2-(iw/zoom/2)+on*0.15", "ih/2-(ih/zoom/2)",       "zoom-out pan-right"),
-    ("min(1.0+0.0003*on,1.08)", "iw/2-(iw/zoom/2)",         "ih/2-(ih/zoom/2)",       "slow-zoom"),
+    # Strong zoom-in with aggressive pan right
+    ("min(1.0+0.0012*on,1.25)", "iw/2-(iw/zoom/2)+on*0.5",  "ih/2-(ih/zoom/2)",          "zoom-in pan-right"),
+    # Strong zoom-in with aggressive pan left
+    ("min(1.0+0.0012*on,1.25)", "iw/2-(iw/zoom/2)-on*0.5",  "ih/2-(ih/zoom/2)",          "zoom-in pan-left"),
+    # Dramatic zoom-out from tight crop
+    ("max(1.30-0.0012*on,1.0)", "iw/2-(iw/zoom/2)",          "ih/2-(ih/zoom/2)",          "zoom-out center"),
+    # Zoom-in + pan up (car reveal feel)
+    ("min(1.0+0.0010*on,1.20)", "iw/2-(iw/zoom/2)",          "ih/2-(ih/zoom/2)+on*0.4",   "zoom-in pan-up"),
+    # Zoom-out + pan right (sweeping shot)
+    ("max(1.25-0.0010*on,1.0)", "iw/2-(iw/zoom/2)+on*0.4",  "ih/2-(ih/zoom/2)",          "zoom-out pan-right"),
+    # Zoom-in + pan down (descend onto subject)
+    ("min(1.0+0.0009*on,1.18)", "iw/2-(iw/zoom/2)",          "ih/2-(ih/zoom/2)-on*0.35",  "zoom-in pan-down"),
+    # Diagonal drift — cinematic feel
+    ("min(1.0+0.0008*on,1.15)", "iw/2-(iw/zoom/2)+on*0.3",  "ih/2-(ih/zoom/2)+on*0.25",  "diagonal drift"),
+    # Zoom-out + pan left
+    ("max(1.22-0.0009*on,1.0)", "iw/2-(iw/zoom/2)-on*0.35", "ih/2-(ih/zoom/2)",          "zoom-out pan-left"),
 ]
 
-XFADE_TRANSITIONS = ["fade", "dissolve", "wipeleft", "wiperight", "fadeblack", "fade"]
+XFADE_TRANSITIONS = [
+    "fade", "dissolve", "wipeleft", "wiperight",
+    "slideright", "slideleft", "slideup",
+    "circlecrop", "rectcrop", "fadeblack",
+    "smoothleft", "smoothright",
+]
 
 
 def run(cmd, timeout=300):
@@ -1054,10 +1069,15 @@ def build_video_filter(images, total_frames, fps=VIDEO_FPS, seed=0):
     seg_frames = total_frames // num
     filters = []
 
+    # Shuffle preset order per video for variety
+    shuffled_presets = KB_PRESETS[:]
+    rng.shuffle(shuffled_presets)
+
     for i in range(num):
-        preset = KB_PRESETS[i % len(KB_PRESETS)]
+        preset = shuffled_presets[i % len(shuffled_presets)]
         z_expr, x_expr, y_expr, label = preset
-        adj = max(int(seg_frames * rng.uniform(0.9, 1.1)), fps * 3)
+        # Tighter per-image duration — images change faster = less slideshow feel
+        adj = max(int(seg_frames * rng.uniform(0.85, 1.05)), fps * 2)
         log(f"    Image {i+1}: {label}")
         filters.append(
             f"[{i}:v]loop=loop=-1:size=1:start=0,"
@@ -1068,7 +1088,7 @@ def build_video_filter(images, total_frames, fps=VIDEO_FPS, seed=0):
         )
 
     prev = "v0"
-    xfade_dur = 0.8
+    xfade_dur = 1.2  # longer crossfade = cinematic, not choppy
     for i in range(1, num):
         transition = XFADE_TRANSITIONS[i % len(XFADE_TRANSITIONS)]
         offset = max(0.5, i * seg_frames / fps - xfade_dur)
@@ -1167,11 +1187,22 @@ def create_video(script_text, english_subtitles, images_input, output_name,
     total_frames = max(int(total_dur * fps), fps * 5)
     num_inputs, vfilter, vlabel = build_video_filter(images, total_frames, fps, seed)
 
+    # Cinematic color grade: slight warmth + contrast boost + subtle vignette
+    COLOR_GRADE = (
+        f"[{vlabel}]"
+        "eq=contrast=1.08:brightness=0.02:saturation=1.15,"
+        "colorbalance=rs=0.04:gs=0.00:bs=-0.04:rm=0.03:gm=0.00:bm=-0.02,"
+        "vignette=PI/5"
+        "[graded]"
+    )
+    full_filter = vfilter + ";" + COLOR_GRADE
+    out_label = "graded"
+
     cmd = ["ffmpeg", "-y"]
     for img in images:
         cmd.extend(["-loop", "1", "-t", str(total_dur + 2), "-i", img])
-    cmd.extend(["-i", audio, "-filter_complex", vfilter,
-                "-map", f"[{vlabel}]", "-map", f"{num_inputs}:a",
+    cmd.extend(["-i", audio, "-filter_complex", full_filter,
+                "-map", f"[{out_label}]", "-map", f"{num_inputs}:a",
                 "-c:v", "libx264", "-preset", "medium", "-crf", "20",
                 "-pix_fmt", "yuv420p", "-c:a", "aac",
                 "-ar", "44100", "-ac", "2",
@@ -3320,8 +3351,8 @@ def safe_process_video(topic=None, format_type=None, upload=False, privacy="publ
     config["video_mode"] = video_mode
     gender, _, _ = VOICE_ASSIGNMENT.get(fmt, VOICE_ASSIGNMENT["default"])
     image_queries = config.get("image_search_queries") or []
-    scene_count = 12 if video_mode == "long" else 6
-    stock_count = 6 if video_mode == "long" else 4
+    scene_count = 14 if video_mode == "long" else 8
+    stock_count = 8 if video_mode == "long" else 6
 
     log(f"{'='*55}")
     log(f"  {CHANNEL_NAME}")
@@ -3620,3 +3651,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
