@@ -1218,6 +1218,15 @@ def create_video(script_text, english_subtitles, images_input, output_name,
     if not images:
         log("❌ No images"); return None
 
+    # Cap images: too many × long duration = zoompan CPU explosion
+    # Long-form (~600s): max 6 images = ~100s each — manageable
+    # Short-form (~120s): max 9 images = ~13s each — fine
+    is_long = total_dur > 300
+    max_imgs = 6 if is_long else 9
+    if len(images) > max_imgs:
+        images = images[:max_imgs]
+        log(f"  Capped to {max_imgs} images (video={total_dur:.0f}s)")
+
     log(f"  Using {len(images)} images")
     fps = VIDEO_FPS
     seed = int(hashlib.md5(output_name.encode()).hexdigest()[:8], 16)
@@ -1235,24 +1244,32 @@ def create_video(script_text, english_subtitles, images_input, output_name,
     full_filter = vfilter + ";" + COLOR_GRADE
     out_label = "graded"
 
+    # Dynamic timeout: 2.5× video duration, floor 300s, ceil 3000s
+    encode_timeout = max(300, min(int(total_dur * 2.5), 3000))
+    # Use veryfast for long videos — same quality visible on YouTube, 4× faster encode
+    encode_preset = "veryfast" if is_long else "medium"
+    encode_crf    = "22" if is_long else "20"
+    log(f"  Encode: preset={encode_preset} crf={encode_crf} timeout={encode_timeout}s")
+
     cmd = ["ffmpeg", "-y"]
     for img in images:
         cmd.extend(["-loop", "1", "-t", str(total_dur + 2), "-i", img])
     cmd.extend(["-i", audio, "-filter_complex", full_filter,
                 "-map", f"[{out_label}]", "-map", f"{num_inputs}:a",
-                "-c:v", "libx264", "-preset", "medium", "-crf", "20",
+                "-c:v", "libx264", "-preset", encode_preset, "-crf", encode_crf,
                 "-pix_fmt", "yuv420p", "-c:a", "aac",
                 "-ar", "44100", "-ac", "2",
                 "-avoid_negative_ts", "make_zero", raw_file])
-    r = run(cmd, timeout=400)
+    r = run(cmd, timeout=encode_timeout)
     if r.returncode != 0:
+        log("  ⚠️ Ken Burns failed — falling back to static slideshow")
         r = run(["ffmpeg", "-y", "-loop", "1", "-i", images[0], "-i", audio,
                  "-vf", "scale=1920:1080:force_original_aspect_ratio=decrease,"
                         "pad=1920:1080:(ow-iw)/2:(oh-ih)/2",
-                 "-c:v", "libx264", "-preset", "medium", "-crf", "20",
+                 "-c:v", "libx264", "-preset", "veryfast", "-crf", "23",
                  "-pix_fmt", "yuv420p", "-c:a", "aac",
                  "-ar", "44100", "-ac", "2", raw_file],
-                timeout=300)
+                timeout=max(300, int(total_dur * 1.5)))
         if r.returncode != 0:
             log("❌ Video encoding failed"); return None
 
@@ -1275,7 +1292,7 @@ def create_video(script_text, english_subtitles, images_input, output_name,
             r = run(["ffmpeg", "-y", "-i", raw_file,
                      "-vf", combined_vf,
                      "-c:v", "libx264", "-preset", "medium", "-crf", "20",
-                     "-c:a", "copy", "-movflags", "+faststart", overlay_file], timeout=240)
+                     "-c:a", "copy", "-movflags", "+faststart", overlay_file], timeout=max(240, int(total_dur * 1.5)))
             if r.returncode == 0:
                 srt_created = True
                 working = overlay_file
@@ -1291,7 +1308,7 @@ def create_video(script_text, english_subtitles, images_input, output_name,
         r = run(["ffmpeg", "-y", "-i", raw_file,
                  "-vf", overlay_filter,
                  "-c:v", "libx264", "-preset", "veryfast", "-crf", "20",
-                 "-c:a", "copy", "-movflags", "+faststart", overlay_file], timeout=200)
+                 "-c:a", "copy", "-movflags", "+faststart", overlay_file], timeout=max(200, int(total_dur * 1.2)))
         working = overlay_file if r.returncode == 0 else raw_file
 
     shutil.copy(working, video_file)
@@ -1349,7 +1366,7 @@ def create_video(script_text, english_subtitles, images_input, output_name,
                     "-filter_complex",
                     "[1:v]scale=200:200[wm];[0:v][wm]overlay=W-220:H-220:format=auto",
                     "-c:v", "libx264", "-preset", "medium", "-crf", "20",
-                    "-c:a", "copy", "-movflags", "+faststart", wm_file], timeout=300)
+                    "-c:a", "copy", "-movflags", "+faststart", wm_file], timeout=max(300, int(total_dur * 1.5)))
         if r_wm.returncode == 0:
             shutil.move(wm_file, video_file)
             log("  ✅ Logo watermark added")
