@@ -41,7 +41,7 @@ env:
 jobs:
   generate:
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 90
 
     steps:
       - uses: actions/checkout@v4
@@ -180,5 +180,5 @@ jobs:
             metadata/
             scripts/
             thumbnails/
-          retention-days: 14
+          retention-days: 1
           if-no-files-found: warn
