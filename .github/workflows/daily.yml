@@ -2,8 +2,8 @@ name: Daily Car News Videos
 
 on:
   schedule:
-    - cron: "30 1 * * *"  # 07:00 IST   # 21:47 UTC = 03:17 IST
-    - cron: "30 12 * * *"  # 18:00 IST   # 13:17 UTC = 18:47 IST
+    - cron: "30 3 * * *"  # 09:00 IST — morning prime time
+    - cron: "30 14 * * *"  # 20:00 IST — evening prime time
   workflow_dispatch:
     inputs:
       topic:
