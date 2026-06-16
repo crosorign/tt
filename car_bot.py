@@ -118,25 +118,27 @@ VOICE_MALE   = "en-IN-PrabhatNeural"  # Indian English male
 
 EQ_FEMALE = (
     "highpass=f=90,"
-    "equalizer=f=250:t=q:w=0.8:g=2,"    # warmth
+    "equalizer=f=220:t=q:w=0.9:g=2,"    # body warmth
     "equalizer=f=900:t=q:w=0.9:g=2,"    # presence
     "equalizer=f=2500:t=q:w=1:g=1.5,"   # clarity
-    "equalizer=f=5000:t=q:w=1:g=-2,"    # reduce sibilance
-    "equalizer=f=8000:t=q:w=1:g=-3,"    # cut harshness
-    "aecho=0.8:0.6:20:0.04,"            # tiny room presence — natural space
-    "acompressor=threshold=-18dB:ratio=2:attack=8:release=80:makeup=2,"
-    "loudnorm=I=-14:TP=-1.5:LRA=9"
+    "equalizer=f=5500:t=q:w=1:g=-2,"    # de-ess
+    "equalizer=f=8500:t=q:w=1:g=-3,"    # cut digital edge
+    "aecho=0.75:0.62:26:0.06,"          # small room — natural Indian studio feel
+    "acompressor=threshold=-20dB:ratio=1.8:attack=8:release=200:makeup=2,"
+    "atempo=0.98,"                        # slight slow — removes TTS rush
+    "loudnorm=I=-14:TP=-1.5:LRA=11"
 )
 
 EQ_MALE = (
     "highpass=f=70,"
-    "equalizer=f=150:t=q:w=0.7:g=2,"    # chest resonance
-    "equalizer=f=500:t=q:w=0.8:g=1.5,"
-    "equalizer=f=2000:t=q:w=1:g=2,"     # intelligibility
-    "equalizer=f=6000:t=q:w=1:g=-2,"
-    "aecho=0.8:0.5:15:0.03,"            # tiny room warmth — no wobble
-    "acompressor=threshold=-16dB:ratio=2:attack=6:release=60:makeup=2.5,"
-    "loudnorm=I=-14:TP=-1.5:LRA=9"
+    "equalizer=f=130:t=q:w=0.8:g=2,"    # chest resonance
+    "equalizer=f=450:t=q:w=0.9:g=1.5,"  # warmth
+    "equalizer=f=2200:t=q:w=1:g=2,"     # intelligibility
+    "equalizer=f=6500:t=q:w=1:g=-2.5,"  # cut harshness
+    "aecho=0.72:0.55:22|38:0.07|0.04,"  # dual-tap natural room
+    "acompressor=threshold=-18dB:ratio=1.7:attack=7:release=250:makeup=2.5,"
+    "atempo=0.97,"                        # PrabhatNeural slightly faster than ideal
+    "loudnorm=I=-14:TP=-1.5:LRA=11"
 )
 VOICE_ASSIGNMENT = {
     "news":       ("male",   VOICE_MALE,   EQ_MALE),
@@ -1174,7 +1176,7 @@ def create_video(script_text, english_subtitles, images_input, output_name,
     t0 = time.time()
     try:
         r = run(["edge-tts", "--file", script_file, "--voice", voice_id,
-                 "--rate=" + RATE_BY_FORMAT_TT.get(format_type, "-8%"), "--pitch=+0Hz", "--write-media", voice_file],
+                 "--rate=" + RATE_BY_FORMAT_TT.get(format_type, "-10%"), "--pitch=+1Hz", "--write-media", voice_file],
                 timeout=300)
     except subprocess.TimeoutExpired:
         log("❌ TTS timeout"); return None
