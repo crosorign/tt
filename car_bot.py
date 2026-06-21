@@ -113,8 +113,8 @@ AI_DISCLOSURE = (
 )
 BGM_DIR = "assets/bgm"
 
-VOICE_FEMALE = "en-IN-NeerjaNeural"   # Indian English female
-VOICE_MALE   = "en-IN-PrabhatNeural"  # Indian English male
+VOICE_FEMALE = "ta-IN-PallaviNeural"   # Tamil female voice
+VOICE_MALE   = "ta-IN-ValluvarNeural"  # Tamil male voice
 
 EQ_FEMALE = (
     "highpass=f=90,"
@@ -2541,8 +2541,8 @@ def upload_short_to_youtube(short_path, short_metadata, youtube):
                 "description": short_desc[:5000],
                 "tags":        tags[:30],
                 "categoryId":  "2",
-                "defaultLanguage": "en",
-                "defaultAudioLanguage": "en",
+                "defaultLanguage": "ta",
+                "defaultAudioLanguage": "ta",
             },
             "status": {
                 "privacyStatus":           "public",
@@ -2785,8 +2785,8 @@ def upload_to_youtube(video_path, metadata, privacy="public"):
             "tags":        [t.strip() for t in
                            validate_tags(metadata.get("tags","")).split(",")][:25],
             "categoryId":  "2",   # Autos & Vehicles
-            "defaultLanguage": "en",
-            "defaultAudioLanguage": "en",
+            "defaultLanguage": "ta",
+            "defaultAudioLanguage": "ta",
         },
         "status": {
             "privacyStatus":           privacy,
