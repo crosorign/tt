@@ -895,15 +895,22 @@ def fetch_pexels_images(keyword, output_dir, count=5):
     return downloaded
 
 
-def fetch_pexels_videos(keyword, output_dir, count=6):
+def fetch_pexels_videos(keyword, output_dir, count=6, extra_queries=None):
     """Download stock video clips from Pexels. Uses same PEXELS_API_KEY as images."""
     if not PEXELS_API_KEY:
         log("⚠️ PEXELS_API_KEY not set — stock video skipped")
         return []
     os.makedirs(output_dir, exist_ok=True)
-    queries = list(PEXELS_QUERIES.get(keyword, PEXELS_QUERIES["default"]))
+    # Merge keyword queries + any extra broll queries (topic-specific)
+    base_queries = list(PEXELS_QUERIES.get(keyword, PEXELS_QUERIES["default"]))
+    if extra_queries:
+        # Prepend broll queries so topic-specific ones get priority
+        all_queries = [q for q in extra_queries if q.strip()] + base_queries
+    else:
+        all_queries = base_queries
     week_seed = int(datetime.datetime.now().strftime("%Y%W"))
-    random.Random(week_seed).shuffle(queries)
+    random.Random(week_seed).shuffle(base_queries)  # only shuffle fallbacks
+    queries = all_queries
     downloaded = []
     for idx in range(count):
         query = queries[idx % len(queries)]
@@ -1565,7 +1572,7 @@ def create_video(script_text, english_subtitles, images_input, output_name,
 
 
 def create_short_video(short_script, images_input, output_name, format_type="default",
-                       hook_headline="", bgm_path=None):
+                       hook_headline="", bgm_path=None, stock_videos=None):
     """Vertical-native Short from dedicated short script."""
     ensure_dirs()
     if not short_script or not short_script.strip():
@@ -1600,19 +1607,93 @@ def create_short_video(short_script, images_input, output_name, format_type="def
     if not images:
         return None
 
-    fps = VIDEO_FPS
-    total_frames = max(int(total_dur * fps), fps * 5)
-    num_inputs, vfilter, vlabel = build_video_filter(images, total_frames, fps, seed=42)
+    # ── Try stock video (cropped to vertical 1080x1920) ───────────────
+    stock_built = False
+    if stock_videos:
+        log(f"  🎬 Short: assembling stock video ({len(stock_videos)} clips, vertical)...")
+        try:
+            n = min(len(stock_videos), 4)   # shorts are ≤60s, 4 clips is enough
+            scene_dur = max(total_dur / n, 3.0)
+            scene_clips = []
+            for i, clip in enumerate(stock_videos[:n]):
+                scene_out = f"/tmp/{output_name}_short_sc{i}.mp4"
+                clip_dur_r = run(["ffprobe", "-v", "error", "-show_entries",
+                                   "format=duration", "-of", "csv=p=0", clip], timeout=10)
+                clip_dur = float(clip_dur_r.stdout.strip() or 0)
+                loop = "-1" if clip_dur < scene_dur else "0"
+                r = run([
+                    "ffmpeg", "-y", "-loglevel", "error",
+                    "-stream_loop", loop, "-i", clip,
+                    "-t", f"{scene_dur:.3f}",
+                    # Scale to vertical 1080x1920 — centre-crop landscape clips
+                    "-vf", "scale=1920:1080:force_original_aspect_ratio=increase,"
+                           "crop=1080:1920:(iw-1080)/2:(ih-1920)/2,"
+                           "eq=contrast=1.05:saturation=1.08",
+                    "-c:v", "libx264", "-preset", "veryfast", "-crf", "22",
+                    "-pix_fmt", "yuv420p", "-an", scene_out,
+                ], timeout=120)
+                if r.returncode == 0 and os.path.exists(scene_out) and os.path.getsize(scene_out) > 10_000:
+                    scene_clips.append(scene_out)
+                else:
+                    scene_clips = []
+                    break
 
-    cmd = ["ffmpeg", "-y"]
-    for img in images:
-        cmd.extend(["-loop", "1", "-t", str(total_dur + 1), "-i", img])
-    cmd.extend(["-i", audio, "-filter_complex", vfilter,
-                "-map", f"[{vlabel}]", "-map", f"{num_inputs}:a",
-                "-c:v", "libx264", "-preset", "veryfast", "-crf", "22",
-                "-pix_fmt", "yuv420p", "-c:a", "aac", "-t", str(total_dur),
-                raw_file])
-    run(cmd, timeout=300)
+            if scene_clips:
+                concat_txt = f"/tmp/{output_name}_short_concat.txt"
+                with open(concat_txt, "w") as fh:
+                    for sc in scene_clips:
+                        fh.write(f"file '{sc}'\n")
+                silent = f"/tmp/{output_name}_short_silent.mp4"
+                rc = run(["ffmpeg", "-y", "-loglevel", "error",
+                          "-f", "concat", "-safe", "0", "-i", concat_txt,
+                          "-c:v", "libx264", "-preset", "veryfast", "-crf", "22",
+                          "-pix_fmt", "yuv420p", silent], timeout=180)
+                if rc.returncode == 0 and os.path.exists(silent):
+                    # Pad if shorter than audio
+                    vdur_r = run(["ffprobe", "-v", "error", "-show_entries",
+                                  "format=duration", "-of", "csv=p=0", silent], timeout=10)
+                    vdur = float(vdur_r.stdout.strip() or 0)
+                    if vdur < total_dur - 0.5:
+                        pad = total_dur - vdur + 1.0
+                        padded = silent.replace(".mp4", "_pad.mp4")
+                        run(["ffmpeg", "-y", "-loglevel", "error", "-i", silent,
+                             "-vf", f"tpad=stop_mode=clone:stop_duration={pad:.3f}",
+                             "-c:v", "libx264", "-preset", "veryfast", "-crf", "22",
+                             "-pix_fmt", "yuv420p", "-an", padded], timeout=120)
+                        if os.path.exists(padded):
+                            os.replace(padded, silent)
+                    # Mux audio into raw_file
+                    mx = run(["ffmpeg", "-y", "-loglevel", "error",
+                               "-i", silent, "-i", audio,
+                               "-c:v", "copy", "-c:a", "aac",
+                               "-ar", "44100", "-ac", "2", "-t", str(total_dur),
+                               "-movflags", "+faststart", raw_file], timeout=180)
+                    if mx.returncode == 0 and os.path.exists(raw_file):
+                        stock_built = True
+                        log("  ✅ Short: stock video assembled (vertical)")
+                for tmp in scene_clips + [concat_txt, silent]:
+                    try:
+                        if os.path.exists(tmp): os.remove(tmp)
+                    except OSError:
+                        pass
+        except Exception as e:
+            log(f"  ⚠️ Short stock video failed: {e} — falling back to Ken Burns")
+
+    # ── Ken Burns fallback (original — untouched) ─────────────────────
+    if not stock_built:
+        fps = VIDEO_FPS
+        total_frames = max(int(total_dur * fps), fps * 5)
+        num_inputs, vfilter, vlabel = build_video_filter(images, total_frames, fps, seed=42)
+
+        cmd = ["ffmpeg", "-y"]
+        for img in images:
+            cmd.extend(["-loop", "1", "-t", str(total_dur + 1), "-i", img])
+        cmd.extend(["-i", audio, "-filter_complex", vfilter,
+                    "-map", f"[{vlabel}]", "-map", f"{num_inputs}:a",
+                    "-c:v", "libx264", "-preset", "veryfast", "-crf", "22",
+                    "-pix_fmt", "yuv420p", "-c:a", "aac", "-t", str(total_dur),
+                    raw_file])
+        run(cmd, timeout=300)
 
     safe_hook = (hook_headline or "CAR NEWS").replace("'", "").replace(":", " -")[:40]
     vertical_vf = (
@@ -1623,9 +1704,22 @@ def create_short_video(short_script, images_input, output_name, format_type="def
         f"x=(w-tw)/2:y=120:shadowcolor=black@0.9:shadowx=2:shadowy=2:"
         f"enable='between(t,0,4)'"
     )
-    run(["ffmpeg", "-y", "-i", raw_file, "-vf", vertical_vf,
-         "-c:v", "libx264", "-preset", "veryfast", "-crf", "24",
-         "-c:a", "copy", "-movflags", "+faststart", short_file], timeout=180)
+
+    # If stock already built raw_file as vertical, only apply text overlay (no rescale)
+    if stock_built:
+        text_only_vf = (
+            f"drawtext=fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf:"
+            f"text='{safe_hook}':fontsize=42:fontcolor=yellow@0.95:"
+            f"x=(w-tw)/2:y=120:shadowcolor=black@0.9:shadowx=2:shadowy=2:"
+            f"enable='between(t,0,4)'"
+        )
+        run(["ffmpeg", "-y", "-i", raw_file, "-vf", text_only_vf,
+             "-c:v", "libx264", "-preset", "veryfast", "-crf", "24",
+             "-c:a", "copy", "-movflags", "+faststart", short_file], timeout=180)
+    else:
+        run(["ffmpeg", "-y", "-i", raw_file, "-vf", vertical_vf,
+             "-c:v", "libx264", "-preset", "veryfast", "-crf", "24",
+             "-c:a", "copy", "-movflags", "+faststart", short_file], timeout=180)
 
     for temp_file in [script_file, voice_file, human_file, raw_file]:
         try:
@@ -3630,7 +3724,8 @@ def safe_process_video(topic=None, format_type=None, upload=False, privacy="publ
         if m:
             kw = m.group(1).lower() + " car"
         vid_dir = os.path.join(PEXELS_VIDEOS_DIR, safe_name)
-        return fetch_pexels_videos(kw, vid_dir, count=stock_count)
+        broll = config.get("broll_queries") or []
+        return fetch_pexels_videos(kw, vid_dir, count=stock_count, extra_queries=broll)
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=4) as pool:
         script_future = pool.submit(
@@ -3729,6 +3824,7 @@ def safe_process_video(topic=None, format_type=None, upload=False, privacy="publ
             create_short_video,
             metadata.get("short_script", ""), images, safe_name,
             fmt, metadata.get("thumbnail_headline", title_short), bgm_path,
+            stock_videos,
         )
         thumb_path = thumb_future.result()
         short_path = short_future.result()
