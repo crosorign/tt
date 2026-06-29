@@ -3203,15 +3203,13 @@ def fetch_wikimedia_car_images(topic, format_type, output_dir, count=4):
     return paths
 
 
-def fetch_pixabay_car_images(topic, format_type, output_dir, count=3):
+def fetch_pixabay_car_images(topic, format_type, output_dir, count=3, explicit_query=None):
     """Fetch free HD car images from Pixabay — no attribution needed."""
     import urllib.request, urllib.parse, json, hashlib
 
     os.makedirs(output_dir, exist_ok=True)
     paths = []
 
-    # Use free Pixabay API (25 req/hour without key, 5000/hour with key)
-    # Key is optional — works without it at lower rate
     query_map = {
         "ev":          "electric car india",
         "suv":         "suv car india road",
@@ -3220,14 +3218,16 @@ def fetch_pixabay_car_images(topic, format_type, output_dir, count=3):
         "comparison":  "cars road india",
         "explainer":   "car dashboard interior",
     }
-    query = query_map.get(format_type, "car india road")
-
-    # Also add model name if recognisable
-    topic_lower = topic.lower()
-    for brand in ["maruti","tata","mahindra","hyundai","kia","honda","toyota","bmw","audi"]:
-        if brand in topic_lower:
-            query = f"{brand} car india"
-            break
+    # Use explicit query if provided (from image_search_queries), else derive from topic
+    if explicit_query:
+        query = explicit_query[:100]
+    else:
+        query = query_map.get(format_type, "car india road")
+        topic_lower = topic.lower()
+        for brand in ["maruti","tata","mahindra","hyundai","kia","honda","toyota","bmw","audi"]:
+            if brand in topic_lower:
+                query = f"{brand} car india"
+                break
 
     try:
         params = {
@@ -3343,8 +3343,9 @@ def fetch_free_media(topic, format_type, output_dir, count=5, image_search_queri
         for query in queries[:3]:
             if len(all_images) >= count:
                 break
-            pix_images = fetch_pixabay_car_images(query, format_type, output_dir,
-                                                   count=count - len(all_images))
+            pix_images = fetch_pixabay_car_images(topic, format_type, output_dir,
+                                                   count=count - len(all_images),
+                                                   explicit_query=query)
             for img in pix_images:
                 if img not in all_images:
                     all_images.append(img)
@@ -3725,7 +3726,16 @@ def safe_process_video(topic=None, format_type=None, upload=False, privacy="publ
             kw = m.group(1).lower() + " car"
         vid_dir = os.path.join(PEXELS_VIDEOS_DIR, safe_name)
         broll = config.get("broll_queries") or []
-        return fetch_pexels_videos(kw, vid_dir, count=stock_count, extra_queries=broll)
+
+        # 1. Pexels stock videos (landscape, copyright-free)
+        pexels_vids = fetch_pexels_videos(kw, vid_dir, count=stock_count, extra_queries=broll)
+
+        # 2. YouTube CC-BY clips — real car footage (best effort, adds to pool)
+        cc_clip = fetch_youtube_cc_clip(topic_val, vid_dir, max_duration=30)
+        if cc_clip:
+            pexels_vids = [cc_clip] + pexels_vids  # put real footage first
+
+        return pexels_vids
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=4) as pool:
         script_future = pool.submit(
