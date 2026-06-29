@@ -90,7 +90,8 @@ OUTPUT_DIR   = "videos"
 SHORTS_DIR   = "shorts"
 METADATA_DIR = "metadata"
 SCRIPTS_DIR  = "scripts"
-PEXELS_DIR   = "pexels_images"
+PEXELS_DIR        = "pexels_images"
+PEXELS_VIDEOS_DIR = "pexels_videos"
 SUBS_DIR     = "subtitles"
 QUEUE_FILE   = "upload_queue.json"
 
@@ -589,7 +590,7 @@ def get_dur(f):
 
 def ensure_dirs():
     for d in [OUTPUT_DIR, SHORTS_DIR, METADATA_DIR, SCRIPTS_DIR,
-              PEXELS_DIR, SUBS_DIR, THUMBNAIL_DIR]:
+              PEXELS_DIR, PEXELS_VIDEOS_DIR, SUBS_DIR, THUMBNAIL_DIR]:
         os.makedirs(d, exist_ok=True)
 
 
@@ -894,6 +895,61 @@ def fetch_pexels_images(keyword, output_dir, count=5):
     return downloaded
 
 
+def fetch_pexels_videos(keyword, output_dir, count=6):
+    """Download stock video clips from Pexels. Uses same PEXELS_API_KEY as images."""
+    if not PEXELS_API_KEY:
+        log("⚠️ PEXELS_API_KEY not set — stock video skipped")
+        return []
+    os.makedirs(output_dir, exist_ok=True)
+    queries = list(PEXELS_QUERIES.get(keyword, PEXELS_QUERIES["default"]))
+    week_seed = int(datetime.datetime.now().strftime("%Y%W"))
+    random.Random(week_seed).shuffle(queries)
+    downloaded = []
+    for idx in range(count):
+        query = queries[idx % len(queries)]
+        cache_path = os.path.join(
+            output_dir,
+            f"{idx}_{hashlib.md5(query.encode()).hexdigest()[:8]}.mp4")
+        if os.path.exists(cache_path) and os.path.getsize(cache_path) > 50_000:
+            downloaded.append(cache_path)
+            continue
+        try:
+            r = requests.get(
+                "https://api.pexels.com/videos/search",
+                headers={"Authorization": PEXELS_API_KEY},
+                params={"query": query, "per_page": 15,
+                        "orientation": "landscape", "size": "medium"},
+                timeout=25)
+            if r.status_code != 200:
+                continue
+            videos = r.json().get("videos", [])
+            if not videos:
+                continue
+            # Pick a mid-quality file (not smallest, not largest)
+            vfiles = videos[idx % len(videos)].get("video_files", [])
+            candidates = [(int(f.get("width") or 0), f.get("link"))
+                          for f in vfiles
+                          if f.get("link") and int(f.get("width") or 0) >= 720]
+            if not candidates:
+                candidates = [(0, f.get("link")) for f in vfiles if f.get("link")]
+            if not candidates:
+                continue
+            candidates.sort(key=lambda x: x[0])
+            url = candidates[len(candidates) // 2][1]
+            dl = requests.get(url, timeout=120, stream=True)
+            if dl.status_code == 200:
+                with open(cache_path, "wb") as fh:
+                    for chunk in dl.iter_content(8192):
+                        fh.write(chunk)
+                if os.path.getsize(cache_path) > 50_000:
+                    downloaded.append(cache_path)
+                    log(f"  🎬 Video clip {idx+1}: {query}")
+        except Exception as e:
+            log(f"  ⚠️ Pexels video error ({query}): {e}")
+    log(f"  ✅ {len(downloaded)}/{count} stock videos fetched")
+    return downloaded
+
+
 def ensure_fallback_image():
     if not os.path.exists("image.png"):
         try:
@@ -1152,7 +1208,7 @@ def inject_pauses(text):
 
 def create_video(script_text, english_subtitles, images_input, output_name,
                  format_type="default", title_short="", bgm_path=None,
-                 source_citation="", topic_val=""):
+                 source_citation="", topic_val="", stock_videos=None):
     ensure_dirs()
     ensure_fallback_image()
 
@@ -1234,60 +1290,142 @@ def create_video(script_text, english_subtitles, images_input, output_name,
     if not images:
         log("❌ No images"); return None
 
-    # Cap images: too many × long duration = zoompan CPU explosion
-    # Long-form (~600s): max 6 images = ~100s each — manageable
-    # Short-form (~120s): max 9 images = ~13s each — fine
-    is_long = total_dur > 300
-    max_imgs = 6 if is_long else 9
-    if len(images) > max_imgs:
-        images = images[:max_imgs]
-        log(f"  Capped to {max_imgs} images (video={total_dur:.0f}s)")
+    # ── Try stock video first ──────────────────────────────────────────
+    stock_built = False
+    if stock_videos:
+        log(f"  🎬 Assembling stock video ({len(stock_videos)} clips)...")
+        try:
+            # Probe audio duration
+            probe = run(["ffprobe", "-v", "error", "-show_entries",
+                         "format=duration", "-of", "csv=p=0", audio],
+                        timeout=15)
+            audio_dur = float(probe.stdout.strip())
 
-    log(f"  Using {len(images)} images")
-    fps = VIDEO_FPS
-    seed = int(hashlib.md5(output_name.encode()).hexdigest()[:8], 16)
-    total_frames = max(int(total_dur * fps), fps * 5)
-    num_inputs, vfilter, vlabel = build_video_filter(images, total_frames, fps, seed)
+            n = max(len(stock_videos), 6)
+            scene_dur = max(audio_dur / n, 3.0)
+            scene_clips = []
 
-    # Cinematic color grade: slight warmth + contrast boost + subtle vignette
-    COLOR_GRADE = (
-        f"[{vlabel}]"
-        "eq=contrast=1.08:brightness=0.02:saturation=1.15,"
-        "colorbalance=rs=0.04:gs=0.00:bs=-0.04:rm=0.03:gm=0.00:bm=-0.02,"
-        "vignette=PI/5"
-        "[graded]"
-    )
-    full_filter = vfilter + ";" + COLOR_GRADE
-    out_label = "graded"
+            for i, clip in enumerate(stock_videos[:n]):
+                scene_out = f"/tmp/{output_name}_sc{i}.mp4"
+                clip_dur_r = run(["ffprobe", "-v", "error", "-show_entries",
+                                   "format=duration", "-of", "csv=p=0", clip],
+                                  timeout=10)
+                clip_dur = float(clip_dur_r.stdout.strip() or 0)
+                loop = "-1" if clip_dur < scene_dur else "0"
+                r = run([
+                    "ffmpeg", "-y", "-loglevel", "error",
+                    "-stream_loop", loop, "-i", clip,
+                    "-t", f"{scene_dur:.3f}",
+                    "-vf", "scale=1920:1080:force_original_aspect_ratio=increase,"
+                           "crop=1920:1080,eq=contrast=1.05:saturation=1.08",
+                    "-c:v", "libx264", "-preset", "veryfast", "-crf", "22",
+                    "-pix_fmt", "yuv420p", "-an", scene_out,
+                ], timeout=180)
+                if r.returncode == 0 and os.path.exists(scene_out) and os.path.getsize(scene_out) > 10_000:
+                    scene_clips.append(scene_out)
+                else:
+                    log(f"  ⚠️ Scene {i+1} failed — falling back to Ken Burns")
+                    scene_clips = []
+                    break
 
-    # Dynamic timeout: 2.5× video duration, floor 300s, ceil 3000s
-    encode_timeout = max(300, min(int(total_dur * 2.5), 3000))
-    # Use veryfast for long videos — same quality visible on YouTube, 4× faster encode
-    encode_preset = "veryfast" if is_long else "medium"
-    encode_crf    = "22" if is_long else "20"
-    log(f"  Encode: preset={encode_preset} crf={encode_crf} timeout={encode_timeout}s")
+            if scene_clips:
+                concat_txt = f"/tmp/{output_name}_concat.txt"
+                with open(concat_txt, "w") as fh:
+                    for sc in scene_clips:
+                        fh.write(f"file '{sc}'\n")
+                silent = f"/tmp/{output_name}_silent.mp4"
+                rc = run(["ffmpeg", "-y", "-loglevel", "error",
+                          "-f", "concat", "-safe", "0", "-i", concat_txt,
+                          "-c:v", "libx264", "-preset", "veryfast", "-crf", "22",
+                          "-pix_fmt", "yuv420p", silent], timeout=300)
+                if rc.returncode == 0 and os.path.exists(silent):
+                    # Pad if video shorter than audio
+                    vdur_r = run(["ffprobe", "-v", "error", "-show_entries",
+                                  "format=duration", "-of", "csv=p=0", silent], timeout=10)
+                    vdur = float(vdur_r.stdout.strip() or 0)
+                    if vdur < audio_dur - 0.5:
+                        pad = audio_dur - vdur + 1.0
+                        padded = silent.replace(".mp4", "_pad.mp4")
+                        run(["ffmpeg", "-y", "-loglevel", "error", "-i", silent,
+                             "-vf", f"tpad=stop_mode=clone:stop_duration={pad:.3f}",
+                             "-c:v", "libx264", "-preset", "veryfast", "-crf", "22",
+                             "-pix_fmt", "yuv420p", "-an", padded], timeout=180)
+                        if os.path.exists(padded):
+                            os.replace(padded, silent)
+                    # Mux audio
+                    mx = run(["ffmpeg", "-y", "-loglevel", "error",
+                               "-i", silent, "-i", audio,
+                               "-c:v", "copy", "-c:a", "aac",
+                               "-ar", "44100", "-ac", "2",
+                               "-movflags", "+faststart", raw_file], timeout=300)
+                    if mx.returncode == 0 and os.path.exists(raw_file):
+                        stock_built = True
+                        log("  ✅ Stock video assembled")
+                # Cleanup temp files
+                for tmp in scene_clips + [concat_txt, silent]:
+                    try:
+                        if os.path.exists(tmp): os.remove(tmp)
+                    except OSError:
+                        pass
+        except Exception as e:
+            log(f"  ⚠️ Stock video exception: {e} — falling back to Ken Burns")
 
-    cmd = ["ffmpeg", "-y"]
-    for img in images:
-        cmd.extend(["-loop", "1", "-t", str(total_dur + 2), "-i", img])
-    cmd.extend(["-i", audio, "-filter_complex", full_filter,
-                "-map", f"[{out_label}]", "-map", f"{num_inputs}:a",
-                "-c:v", "libx264", "-preset", encode_preset, "-crf", encode_crf,
-                "-pix_fmt", "yuv420p", "-c:a", "aac",
-                "-ar", "44100", "-ac", "2",
-                "-avoid_negative_ts", "make_zero", raw_file])
-    r = run(cmd, timeout=encode_timeout)
-    if r.returncode != 0:
-        log("  ⚠️ Ken Burns failed — falling back to static slideshow")
-        r = run(["ffmpeg", "-y", "-loop", "1", "-i", images[0], "-i", audio,
-                 "-vf", "scale=1920:1080:force_original_aspect_ratio=decrease,"
-                        "pad=1920:1080:(ow-iw)/2:(oh-ih)/2",
-                 "-c:v", "libx264", "-preset", "veryfast", "-crf", "23",
-                 "-pix_fmt", "yuv420p", "-c:a", "aac",
-                 "-ar", "44100", "-ac", "2", raw_file],
-                timeout=max(300, int(total_dur * 1.5)))
+    # ── Ken Burns (original — runs only if stock video was not built) ──
+    if not stock_built:
+        # Cap images: too many × long duration = zoompan CPU explosion
+        # Long-form (~600s): max 6 images = ~100s each — manageable
+        # Short-form (~120s): max 9 images = ~13s each — fine
+        is_long = total_dur > 300
+        max_imgs = 6 if is_long else 9
+        if len(images) > max_imgs:
+            images = images[:max_imgs]
+            log(f"  Capped to {max_imgs} images (video={total_dur:.0f}s)")
+
+        log(f"  Using {len(images)} images")
+        fps = VIDEO_FPS
+        seed = int(hashlib.md5(output_name.encode()).hexdigest()[:8], 16)
+        total_frames = max(int(total_dur * fps), fps * 5)
+        num_inputs, vfilter, vlabel = build_video_filter(images, total_frames, fps, seed)
+
+        # Cinematic color grade: slight warmth + contrast boost + subtle vignette
+        COLOR_GRADE = (
+            f"[{vlabel}]"
+            "eq=contrast=1.08:brightness=0.02:saturation=1.15,"
+            "colorbalance=rs=0.04:gs=0.00:bs=-0.04:rm=0.03:gm=0.00:bm=-0.02,"
+            "vignette=PI/5"
+            "[graded]"
+        )
+        full_filter = vfilter + ";" + COLOR_GRADE
+        out_label = "graded"
+
+        # Dynamic timeout: 2.5× video duration, floor 300s, ceil 3000s
+        encode_timeout = max(300, min(int(total_dur * 2.5), 3000))
+        # Use veryfast for long videos — same quality visible on YouTube, 4× faster encode
+        encode_preset = "veryfast" if is_long else "medium"
+        encode_crf    = "22" if is_long else "20"
+        log(f"  Encode: preset={encode_preset} crf={encode_crf} timeout={encode_timeout}s")
+
+        cmd = ["ffmpeg", "-y"]
+        for img in images:
+            cmd.extend(["-loop", "1", "-t", str(total_dur + 2), "-i", img])
+        cmd.extend(["-i", audio, "-filter_complex", full_filter,
+                    "-map", f"[{out_label}]", "-map", f"{num_inputs}:a",
+                    "-c:v", "libx264", "-preset", encode_preset, "-crf", encode_crf,
+                    "-pix_fmt", "yuv420p", "-c:a", "aac",
+                    "-ar", "44100", "-ac", "2",
+                    "-avoid_negative_ts", "make_zero", raw_file])
+        r = run(cmd, timeout=encode_timeout)
         if r.returncode != 0:
-            log("❌ Video encoding failed"); return None
+            log("  ⚠️ Ken Burns failed — falling back to static slideshow")
+            r = run(["ffmpeg", "-y", "-loop", "1", "-i", images[0], "-i", audio,
+                     "-vf", "scale=1920:1080:force_original_aspect_ratio=decrease,"
+                            "pad=1920:1080:(ow-iw)/2:(oh-ih)/2",
+                     "-c:v", "libx264", "-preset", "veryfast", "-crf", "23",
+                     "-pix_fmt", "yuv420p", "-c:a", "aac",
+                     "-ar", "44100", "-ac", "2", raw_file],
+                    timeout=max(300, int(total_dur * 1.5)))
+            if r.returncode != 0:
+                log("❌ Video encoding failed"); return None
 
     log("✍️  Step 5/7 Text overlays + subtitles...")
     overlay_filter = build_text_overlay(title_short, format_type)
@@ -3461,7 +3599,7 @@ def safe_process_video(topic=None, format_type=None, upload=False, privacy="publ
     safe_name = hashlib.md5(topic_val.encode()).hexdigest()[:10]
     img_dir = os.path.join(PEXELS_DIR, safe_name)
 
-    # ── PARALLEL PHASE 1: Script + Images + BGM all at once ──────────
+    # ── PARALLEL PHASE 1: Script + Images + Videos + BGM all at once ────
     log("🚀 Phase 1: Script + Images + BGM in parallel...")
 
     def fetch_all_images():
@@ -3479,15 +3617,32 @@ def safe_process_video(topic=None, format_type=None, upload=False, privacy="publ
             log(f"  ⚠️ Pollinations skipped: {e}")
         return imgs
 
-    with concurrent.futures.ThreadPoolExecutor(max_workers=3) as pool:
+    def fetch_all_videos():
+        import re as _re
+        kw = {"ev": "electric car", "suv": "suv india",
+              "news": "car india", "launch": "car showroom",
+              "comparison": "cars road", "explainer": "car dashboard"}.get(fmt, "car india")
+        m = _re.search(
+            r"\b(Tata|Maruti|Hyundai|Kia|Mahindra|Toyota|Honda|Skoda|MG|"
+            r"Nexon|Creta|Seltos|Punch|Brezza|Safari|Harrier|XUV|Scorpio|"
+            r"Innova|Fortuner|Tesla|BYD)\b",
+            topic_val, _re.IGNORECASE)
+        if m:
+            kw = m.group(1).lower() + " car"
+        vid_dir = os.path.join(PEXELS_VIDEOS_DIR, safe_name)
+        return fetch_pexels_videos(kw, vid_dir, count=stock_count)
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=4) as pool:
         script_future = pool.submit(
             generate_script, topic_val, fmt, hook_angle, gender, video_mode)
         images_future = pool.submit(fetch_all_images)
+        videos_future = pool.submit(fetch_all_videos)
         bgm_future    = pool.submit(ensure_bgm, fmt)
 
-        script = script_future.result()
-        images = images_future.result()
-        bgm_path = bgm_future.result()
+        script      = script_future.result()
+        images      = images_future.result()
+        stock_videos = videos_future.result()
+        bgm_path    = bgm_future.result()
 
     if not script or not script.strip():
         log("  ❌ Script empty — aborting pipeline")
@@ -3549,6 +3704,7 @@ def safe_process_video(topic=None, format_type=None, upload=False, privacy="publ
         bgm_path=bgm_path,
         source_citation=source_citation,
         topic_val=topic_val,
+        stock_videos=stock_videos,
     )
     if not video_result:
         log("❌ Video creation failed")
