@@ -1452,8 +1452,8 @@ def create_video(script_text, english_subtitles, images_input, output_name,
             )
             r = run(["ffmpeg", "-y", "-i", raw_file,
                      "-vf", combined_vf,
-                     "-c:v", "libx264", "-preset", "medium", "-crf", "20",
-                     "-c:a", "copy", "-movflags", "+faststart", overlay_file], timeout=max(240, int(total_dur * 1.5)))
+                     "-c:v", "libx264", "-preset", "veryfast", "-crf", "20",
+                     "-c:a", "copy", "-movflags", "+faststart", overlay_file], timeout=max(400, int(total_dur * 2.5)))
             if r.returncode == 0:
                 srt_created = True
                 working = overlay_file
@@ -1469,7 +1469,7 @@ def create_video(script_text, english_subtitles, images_input, output_name,
         r = run(["ffmpeg", "-y", "-i", raw_file,
                  "-vf", overlay_filter,
                  "-c:v", "libx264", "-preset", "veryfast", "-crf", "20",
-                 "-c:a", "copy", "-movflags", "+faststart", overlay_file], timeout=max(200, int(total_dur * 1.2)))
+                 "-c:a", "copy", "-movflags", "+faststart", overlay_file], timeout=max(400, int(total_dur * 2.5)))
         working = overlay_file if r.returncode == 0 else raw_file
 
     shutil.copy(working, video_file)
@@ -1526,8 +1526,8 @@ def create_video(script_text, english_subtitles, images_input, output_name,
                     "-i", video_file, "-i", LOGO_WATERMARK,
                     "-filter_complex",
                     "[1:v]scale=200:200[wm];[0:v][wm]overlay=W-220:H-220:format=auto",
-                    "-c:v", "libx264", "-preset", "medium", "-crf", "20",
-                    "-c:a", "copy", "-movflags", "+faststart", wm_file], timeout=max(300, int(total_dur * 1.5)))
+                    "-c:v", "libx264", "-preset", "veryfast", "-crf", "20",
+                    "-c:a", "copy", "-movflags", "+faststart", wm_file], timeout=max(400, int(total_dur * 2)))
         if r_wm.returncode == 0:
             shutil.move(wm_file, video_file)
             log("  ✅ Logo watermark added")
