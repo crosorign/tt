@@ -173,53 +173,53 @@ BGM_PROFILES = {
 
 PEXELS_QUERIES = {
     "car": [
-        "modern car driving india highway",
-        "luxury car showroom india",
-        "car headlights night driving",
-        "suv mountain road india",
-        "car interior dashboard modern",
-        "automotive design studio",
-        "car engine mechanical",
-        "busy indian city traffic cars",
+        "car driving highway fast",
+        "cars overtaking highway india",
+        "car accelerating road motion",
+        "suv driving mountain road",
+        "car night driving headlights blur",
+        "traffic cars moving city india",
+        "car engine revving close up",
+        "car wheels spinning motion",
     ],
     "suv": [
-        "suv off road adventure",
-        "large suv india highway",
-        "suv mountain terrain",
-        "suv interior premium",
-        "4x4 vehicle muddy terrain",
-        "suv family travel",
+        "suv driving off road mud",
+        "suv overtaking highway speed",
+        "suv mountain road driving",
+        "suv wheels off road action",
+        "family suv driving highway",
+        "4x4 rough terrain action",
     ],
     "electric car": [
-        "electric car charging station",
-        "ev charging india",
-        "electric vehicle futuristic",
-        "ev battery technology",
-        "electric car interior minimalist",
-        "sustainable transport city",
-        "electric car highway driving",
+        "electric car silent highway drive",
+        "ev charging port close up",
+        "electric car smooth acceleration",
+        "ev battery charging animation",
+        "electric car futuristic drive",
+        "ev driving city silent",
+        "electric vehicle highway motion",
     ],
     "highway india": [
-        "highway india expressway",
-        "national highway india cars",
-        "expressway cars speed",
-        "india road trip cars",
-        "golden quadrilateral highway",
+        "india expressway cars speeding",
+        "national highway india traffic flow",
+        "cars driving india highway timelapse",
+        "india road trip highway motion",
+        "expressway cars overtaking",
     ],
     "concept car": [
-        "futuristic concept car design",
-        "auto expo india cars",
-        "car design sketch studio",
-        "prototype vehicle reveal",
-        "automotive future design",
-        "concept vehicle showroom",
+        "concept car rotating display",
+        "car reveal event stage",
+        "futuristic car design close up",
+        "auto expo india car launch",
+        "prototype car reveal dramatic",
+        "concept vehicle moving showroom",
     ],
     "default": [
-        "modern car driving",
-        "automotive technology",
-        "car showroom premium",
-        "road trip vehicle india",
-        "car headlights dark road",
+        "car driving highway motion",
+        "cars moving road india",
+        "car overtaking highway speed",
+        "suv driving road action",
+        "car headlights motion blur night",
     ],
 }
 
@@ -1308,23 +1308,39 @@ def create_video(script_text, english_subtitles, images_input, output_name,
                         timeout=15)
             audio_dur = float(probe.stdout.strip())
 
-            n = max(len(stock_videos), 6)
-            scene_dur = max(audio_dur / n, 3.0)
+            # Shorter scenes (5s) = more cuts = dynamic feel, not slideshow
+            target_scene_dur = 5.0
+            n = max(int(audio_dur / target_scene_dur), len(stock_videos))
+            n = min(n, len(stock_videos) * 2)  # don't loop more than twice
+            scene_dur = max(audio_dur / max(n, 1), 3.0)
             scene_clips = []
 
-            for i, clip in enumerate(stock_videos[:n]):
+            for i in range(n):
+                clip = stock_videos[i % len(stock_videos)]
                 scene_out = f"/tmp/{output_name}_sc{i}.mp4"
                 clip_dur_r = run(["ffprobe", "-v", "error", "-show_entries",
                                    "format=duration", "-of", "csv=p=0", clip],
                                   timeout=10)
                 clip_dur = float(clip_dur_r.stdout.strip() or 0)
+
+                # Use second half of clip on second loop so it looks different
+                ss_args = []
+                if i >= len(stock_videos) and clip_dur > scene_dur * 2:
+                    ss_args = ["-ss", f"{clip_dur / 2:.1f}"]
+
                 loop = "-1" if clip_dur < scene_dur else "0"
                 r = run([
                     "ffmpeg", "-y", "-loglevel", "error",
                     "-stream_loop", loop, "-i", clip,
+                    *ss_args,
                     "-t", f"{scene_dur:.3f}",
-                    "-vf", "scale=1920:1080:force_original_aspect_ratio=increase,"
-                           "crop=1920:1080,eq=contrast=1.05:saturation=1.08",
+                    "-vf", (
+                        "scale=1920:1080:force_original_aspect_ratio=increase,"
+                        "crop=1920:1080,"
+                        # Subtle zoom adds motion feel even on near-static clips
+                        f"zoompan=z='min(zoom+0.0008,1.12)':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d=1:fps=25:s=1920x1080,"
+                        "eq=contrast=1.05:saturation=1.10"
+                    ),
                     "-c:v", "libx264", "-preset", "veryfast", "-crf", "22",
                     "-pix_fmt", "yuv420p", "-an", scene_out,
                 ], timeout=180)
