@@ -3098,7 +3098,8 @@ def upload_to_youtube(video_path, metadata, privacy="public"):
 # Layer 4: Animated Pillow scenes (existing fallback)
 # ═══════════════════════════════════════════════════════════════
 
-PIXABAY_API_KEY = os.environ.get("PIXABAY_API_KEY", "")
+PIXABAY_API_KEY    = os.environ.get("PIXABAY_API_KEY", "")
+UNSPLASH_ACCESS_KEY = os.environ.get("UNSPLASH_ACCESS_KEY", "")
 
 # Wikimedia Commons category map for Indian cars
 WIKIMEDIA_CAR_CATEGORIES = {
@@ -3136,10 +3137,17 @@ def fetch_wikimedia_car_images(topic, format_type, output_dir, count=4):
             category_list = cats
             break
 
-    # Also do a direct search
-    # Extract car model name from topic for search query
-    search_query = _re.sub(r'[₹%#!?|–—]', ' ', topic)
-    search_query = ' '.join(search_query.split()[:6])  # first 6 words
+    # Extract car model name cleanly — "Tata Sierra EV", "Hyundai Creta", not full title
+    car_brands = ["Tata","Maruti","Suzuki","Hyundai","Kia","Mahindra","Toyota","Honda",
+                  "Renault","Volkswagen","Skoda","MG","Jeep","Nissan","BYD","Ola"]
+    search_query = ' '.join(topic.split()[:4])  # safe default
+    for brand in car_brands:
+        if brand.lower() in topic_lower:
+            m = _re.search(rf'\b{brand}\s+(\w+(?:\s+\w+)?)', topic, _re.IGNORECASE)
+            if m:
+                search_query = m.group(0)
+            break
+    search_query = _re.sub(r'[₹%#!?|–—:()]', ' ', search_query).strip()
 
     headers = {"User-Agent": "TechMeetsTravel/1.0 (YouTube car news bot; contact@techmeetsTravel.com)"}
 
@@ -3236,7 +3244,10 @@ def fetch_pixabay_car_images(topic, format_type, output_dir, count=3, explicit_q
     }
     # Use explicit query if provided (from image_search_queries), else derive from topic
     if explicit_query:
-        query = explicit_query[:100]
+        # Strip chars that cause Pixabay HTTP 400
+        import re as _re2
+        query = _re2.sub(r'[₹%#!?|–—:()&+]', ' ', explicit_query)
+        query = ' '.join(query.split()[:6])  # max 6 words
     else:
         query = query_map.get(format_type, "car india road")
         topic_lower = topic.lower()
@@ -3282,6 +3293,65 @@ def fetch_pixabay_car_images(topic, format_type, output_dir, count=3, explicit_q
         log(f"  ⚠️ Pixabay: {e}")
 
     log(f"  ✅ Pixabay: {len(paths)} images")
+    return paths
+
+
+def fetch_unsplash_car_images(topic, output_dir, count=3):
+    """Fetch real car photos from Unsplash — free for commercial use, no attribution needed."""
+    import urllib.request, urllib.parse, json, hashlib, re as _re
+
+    if not UNSPLASH_ACCESS_KEY:
+        return []
+    os.makedirs(output_dir, exist_ok=True)
+    paths = []
+
+    # Extract clean car model name
+    car_brands = ["Tata","Maruti","Hyundai","Kia","Mahindra","Toyota","Honda",
+                  "Renault","Skoda","MG","BYD","Nissan","Jeep","Volkswagen"]
+    query = ' '.join(topic.split()[:4])
+    topic_lower = topic.lower()
+    for brand in car_brands:
+        if brand.lower() in topic_lower:
+            m = _re.search(rf'\b{brand}\s+(\w+(?:\s+\w+)?)', topic, _re.IGNORECASE)
+            if m:
+                query = m.group(0)
+            break
+    query = _re.sub(r'[₹%#!?|–—:()]', ' ', query).strip()
+
+    try:
+        params = {
+            "query":       query + " car india",
+            "per_page":    str(count * 2),
+            "orientation": "landscape",
+        }
+        url = "https://api.unsplash.com/search/photos?" + urllib.parse.urlencode(params)
+        req = urllib.request.Request(url, headers={
+            "Authorization": f"Client-ID {UNSPLASH_ACCESS_KEY}",
+            "Accept-Version": "v1",
+        })
+        with urllib.request.urlopen(req, timeout=12) as r:
+            data = json.loads(r.read())
+
+        for result in data.get("results", [])[:count * 2]:
+            if len(paths) >= count: break
+            img_url = result.get("urls", {}).get("regular", "")
+            if not img_url: continue
+            photo_id = result.get("id", hashlib.md5(img_url.encode()).hexdigest()[:8])
+            fname = os.path.join(output_dir, f"unsplash_{photo_id}.jpg")
+            if os.path.exists(fname) and os.path.getsize(fname) > 5000:
+                paths.append(fname); continue
+            try:
+                req2 = urllib.request.Request(img_url, headers={"User-Agent": "TechMeetsTravel/1.0"})
+                with urllib.request.urlopen(req2, timeout=15) as r2:
+                    with open(fname, "wb") as fh: fh.write(r2.read())
+                if os.path.getsize(fname) > 5000:
+                    paths.append(fname)
+                    log(f"  📸 Unsplash: {query} ({photo_id})")
+            except: pass
+    except Exception as e:
+        log(f"  ⚠️ Unsplash: {e}")
+
+    log(f"  ✅ Unsplash: {len(paths)} images")
     return paths
 
 
@@ -3355,6 +3425,15 @@ def fetch_free_media(topic, format_type, output_dir, count=5, image_search_queri
             if img not in all_images:
                 all_images.append(img)
 
+    # Layer 2: Unsplash — real car photos, best quality (50 req/hr — use as fallback only)
+    if len(all_images) < 3 and UNSPLASH_ACCESS_KEY:
+        unsplash_imgs = fetch_unsplash_car_images(topic, output_dir,
+                                                   count=count - len(all_images))
+        for img in unsplash_imgs:
+            if img not in all_images:
+                all_images.append(img)
+
+    # Layer 3: Pixabay — free HD stock
     if len(all_images) < count:
         for query in queries[:3]:
             if len(all_images) >= count:
