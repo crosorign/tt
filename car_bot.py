@@ -1498,10 +1498,10 @@ def create_video(script_text, english_subtitles, images_input, output_name,
     r_combined = run([
         "ffmpeg", "-y", "-i", video_file,
         "-vf", combined_vf,
-        "-c:v", "libx264", "-preset", "medium", "-crf", "20",
+        "-c:v", "libx264", "-preset", "veryfast", "-crf", "20",
         "-c:a", "copy",
         combined_file
-    ], timeout=200)
+    ], timeout=max(300, int(total_dur * 2)))
 
     if r_combined.returncode == 0 and os.path.exists(combined_file):
         shutil.move(combined_file, video_file)
@@ -3663,7 +3663,7 @@ def safe_process_video(topic=None, format_type=None, upload=False, privacy="publ
         ensure_fallback_image()
         images = ["image.png"] if os.path.exists("image.png") else []
 
-    log(f"  📦 Total images: {len(images)}")
+    log(f"  📦 Total images: {len(images)} | Stock videos: {len(stock_videos)}")
 
     # ── PARALLEL PHASE 2: Subtitles + Metadata + Source citation ─────
     log("🚀 Phase 2: Subtitles + Metadata + Source citation in parallel...")
